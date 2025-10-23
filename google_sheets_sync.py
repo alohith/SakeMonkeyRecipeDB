@@ -103,6 +103,8 @@ class GoogleSheetsSync:
         if not self.service or not self.spreadsheet_id:
             raise Exception("Not authenticated or no spreadsheet ID set")
         
+        print(f"Exporting to Google Sheet: {self.get_spreadsheet_url()}")
+        
         # Connect to SQLite database
         conn = sqlite3.connect(db_path)
         conn.row_factory = sqlite3.Row
@@ -277,6 +279,33 @@ class GoogleSheetsSync:
         except HttpError as error:
             print(f"Error listing sheets: {error}")
             return []
+    
+    def check_sheet_structure(self):
+        """Check if the Google Sheet has the required structure"""
+        if not self.service or not self.spreadsheet_id:
+            return False, "Not authenticated or no spreadsheet ID set"
+        
+        try:
+            sheets = self.list_sheets()
+            if not sheets:
+                return False, "No sheets found"
+            
+            # Check for required sheets
+            required_sheets = ['Ingredients', 'Recipe', 'Starters', 'PublishNotes', 'Formulas']
+            existing_sheet_names = [sheet['title'] for sheet in sheets]
+            
+            missing_sheets = []
+            for required_sheet in required_sheets:
+                if required_sheet not in existing_sheet_names:
+                    missing_sheets.append(required_sheet)
+            
+            if missing_sheets:
+                return False, f"Missing required sheets: {', '.join(missing_sheets)}"
+            
+            return True, f"All required sheets found: {', '.join(required_sheets)}"
+            
+        except Exception as e:
+            return False, f"Error checking sheet structure: {e}"
 
 def setup_google_credentials():
     """Helper function to guide user through Google API setup"""
