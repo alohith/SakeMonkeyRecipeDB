@@ -39,7 +39,32 @@ The database is built from an Excel file with the following sheets:
 
 ## Usage
 
+### Command Line Interface
 Run the database interface:
 ```bash
 python database_interface.py
 ```
+
+### Graphical User Interface
+Run the GUI application:
+```bash
+python gui_app.py
+```
+or
+```bash
+python run_gui.py
+```
+
+### GUI Features
+The GUI provides an intuitive interface for:
+- **Ingredients Tab**: Add and manage ingredients (yeast, rice, koji, etc.)
+- **Recipes Tab**: Create and manage sake recipes with batch information
+- **Starters Tab**: Track yeast starter development and measurements
+- **Publish Notes Tab**: Record final product details (ABV, SMV, etc.)
+- **View Data Tab**: Database statistics and data overview
+
+### Quick Start
+1. Run `python gui_app.py` to open the GUI
+2. Navigate between tabs to add different types of data
+3. Use the "Load Data" buttons to refresh dropdown lists
+4. View statistics in the "View Data" tab
