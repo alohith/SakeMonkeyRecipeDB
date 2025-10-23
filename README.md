@@ -22,6 +22,35 @@ The database is built from an Excel file with the following sheets:
 
 ## Setup
 
+### Option 1: Conda Environment (Recommended for Development)
+1. Create and activate conda environment:
+   ```bash
+   conda env create -f environment.yml
+   conda activate SakeMonkey
+   ```
+
+2. Initialize the database:
+   ```bash
+   python setup_database.py
+   ```
+
+3. Import data from Excel:
+   ```bash
+   python import_excel_data.py
+   ```
+
+### Option 2: Docker Containerization (Recommended for Production)
+1. Setup Docker environment:
+   ```bash
+   python setup_docker.py
+   ```
+
+2. Start the application:
+   ```bash
+   docker-compose up
+   ```
+
+### Option 3: Manual Setup
 1. Install dependencies:
    ```bash
    pip install -r requirements.txt
@@ -98,3 +127,44 @@ The GUI provides an intuitive interface for:
 - **Configuration**: Set your spreadsheet ID
 - **Sync Operations**: Export/import data with progress tracking
 - **Status Monitoring**: Real-time sync status and error reporting
+
+## Docker Usage
+
+### Quick Start with Docker
+```bash
+# Setup Docker environment
+python setup_docker.py
+
+# Start the application
+docker-compose up
+
+# Run in background
+docker-compose up -d
+
+# Stop the application
+docker-compose down
+```
+
+### Docker Commands
+```bash
+# Run GUI application
+docker-compose run --rm sakemonkey-db python gui_app.py
+
+# Run CLI interface
+docker-compose run --rm sakemonkey-db python database_interface.py
+
+# Initialize database
+docker-compose run --rm sakemonkey-db python setup_database.py
+
+# Import Excel data
+docker-compose run --rm sakemonkey-db python import_excel_data.py
+
+# Create backup
+docker-compose run --rm backup
+```
+
+### Data Persistence
+- **Database**: `./data/sake_recipe_db.sqlite`
+- **Credentials**: `./credentials/`
+- **Logs**: `./logs/`
+- **Backups**: `./backups/`

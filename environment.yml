@@ -1,0 +1,16 @@
+name: SakeMonkey
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.9
+  - pip
+  - sqlite
+  - pandas
+  - openpyxl
+  - python-dateutil
+  - pip:
+    - google-auth==2.23.4
+    - google-auth-oauthlib==1.1.0
+    - google-auth-httplib2==0.1.1
+    - google-api-python-client==2.185.0
