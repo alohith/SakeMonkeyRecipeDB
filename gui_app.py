@@ -9,6 +9,17 @@ from tkinter import ttk, messagebox, simpledialog
 import sqlite3
 from datetime import datetime
 import os
+import threading
+
+# Import Google Sheets sync
+try:
+    from google_sheets_sync import GoogleSheetsSync
+    from google_sheets_config import get_spreadsheet_id, set_spreadsheet_id
+    GOOGLE_SHEETS_AVAILABLE = True
+except ImportError:
+    GOOGLE_SHEETS_AVAILABLE = False
+    print("Google Sheets integration not available. Install required packages:")
+    print("pip install google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client")
 
 class SakeRecipeGUI:
     def __init__(self, root):
@@ -41,6 +52,10 @@ class SakeRecipeGUI:
         self.create_starters_tab()
         self.create_publish_notes_tab()
         self.create_view_data_tab()
+        
+        # Add Google Sheets tab if available
+        if GOOGLE_SHEETS_AVAILABLE:
+            self.create_google_sheets_tab()
     
     def create_ingredients_tab(self):
         """Create ingredients management tab"""
@@ -377,6 +392,74 @@ class SakeRecipeGUI:
         ttk.Button(button_frame, text="Refresh Statistics", command=self.load_statistics).pack(side='left', padx=5)
         ttk.Button(button_frame, text="View All Recipes", command=self.view_all_recipes).pack(side='left', padx=5)
         ttk.Button(button_frame, text="View All Ingredients", command=self.view_all_ingredients).pack(side='left', padx=5)
+    
+    def create_google_sheets_tab(self):
+        """Create Google Sheets sync tab"""
+        sheets_frame = ttk.Frame(self.notebook)
+        self.notebook.add(sheets_frame, text="Google Sheets Sync")
+        
+        # Title
+        title_label = ttk.Label(sheets_frame, text="Google Sheets Synchronization", font=('Arial', 16, 'bold'))
+        title_label.pack(pady=10)
+        
+        # Status frame
+        status_frame = ttk.LabelFrame(sheets_frame, text="Sync Status", padding=10)
+        status_frame.pack(fill='x', padx=10, pady=5)
+        
+        self.sync_status_label = ttk.Label(status_frame, text="Not connected to Google Sheets", foreground='red')
+        self.sync_status_label.pack(pady=5)
+        
+        # Configuration frame
+        config_frame = ttk.LabelFrame(sheets_frame, text="Configuration", padding=10)
+        config_frame.pack(fill='x', padx=10, pady=5)
+        
+        # Spreadsheet ID entry
+        ttk.Label(config_frame, text="Spreadsheet ID:").grid(row=0, column=0, sticky='w', pady=2)
+        self.spreadsheet_id_entry = ttk.Entry(config_frame, width=50)
+        self.spreadsheet_id_entry.grid(row=0, column=1, pady=2, padx=(5, 0))
+        
+        # Load current spreadsheet ID
+        current_id = get_spreadsheet_id()
+        if current_id:
+            self.spreadsheet_id_entry.insert(0, current_id)
+        
+        ttk.Button(config_frame, text="Set ID", command=self.set_spreadsheet_id).grid(row=0, column=2, padx=(5, 0))
+        
+        # Authentication frame
+        auth_frame = ttk.LabelFrame(sheets_frame, text="Authentication", padding=10)
+        auth_frame.pack(fill='x', padx=10, pady=5)
+        
+        auth_button_frame = ttk.Frame(auth_frame)
+        auth_button_frame.pack()
+        
+        ttk.Button(auth_button_frame, text="Authenticate", command=self.authenticate_google_sheets).pack(side='left', padx=5)
+        ttk.Button(auth_button_frame, text="Test Connection", command=self.test_google_sheets_connection).pack(side='left', padx=5)
+        ttk.Button(auth_button_frame, text="Setup Instructions", command=self.show_setup_instructions).pack(side='left', padx=5)
+        
+        # Sync operations frame
+        sync_frame = ttk.LabelFrame(sheets_frame, text="Synchronization", padding=10)
+        sync_frame.pack(fill='x', padx=10, pady=5)
+        
+        sync_button_frame = ttk.Frame(sync_frame)
+        sync_button_frame.pack()
+        
+        ttk.Button(sync_button_frame, text="Export to Google Sheets", command=self.export_to_google_sheets).pack(side='left', padx=5)
+        ttk.Button(sync_button_frame, text="Import from Google Sheets", command=self.import_from_google_sheets).pack(side='left', padx=5)
+        ttk.Button(sync_button_frame, text="Open Spreadsheet", command=self.open_google_spreadsheet).pack(side='left', padx=5)
+        
+        # Progress frame
+        progress_frame = ttk.LabelFrame(sheets_frame, text="Progress", padding=10)
+        progress_frame.pack(fill='x', padx=10, pady=5)
+        
+        self.progress_var = tk.StringVar(value="Ready")
+        self.progress_label = ttk.Label(progress_frame, textvariable=self.progress_var)
+        self.progress_label.pack()
+        
+        self.progress_bar = ttk.Progressbar(progress_frame, mode='indeterminate')
+        self.progress_bar.pack(fill='x', pady=5)
+        
+        # Initialize Google Sheets sync
+        self.google_sync = GoogleSheetsSync()
     
     def load_ingredients(self):
         """Load ingredients into comboboxes"""
@@ -735,6 +818,173 @@ class SakeRecipeGUI:
             ))
         
         tree.pack(fill='both', expand=True, padx=10, pady=10)
+    
+    def set_spreadsheet_id(self):
+        """Set the Google Spreadsheet ID"""
+        spreadsheet_id = self.spreadsheet_id_entry.get().strip()
+        if spreadsheet_id:
+            set_spreadsheet_id(spreadsheet_id)
+            self.google_sync.set_spreadsheet_id(spreadsheet_id)
+            messagebox.showinfo("Success", f"Spreadsheet ID set to: {spreadsheet_id}")
+        else:
+            messagebox.showerror("Error", "Please enter a valid Spreadsheet ID")
+    
+    def authenticate_google_sheets(self):
+        """Authenticate with Google Sheets API"""
+        def auth_thread():
+            try:
+                self.progress_var.set("Authenticating...")
+                self.progress_bar.start()
+                
+                if self.google_sync.authenticate():
+                    self.sync_status_label.config(text="Connected to Google Sheets", foreground='green')
+                    self.progress_var.set("Authentication successful!")
+                else:
+                    self.sync_status_label.config(text="Authentication failed", foreground='red')
+                    self.progress_var.set("Authentication failed!")
+                
+            except Exception as e:
+                self.sync_status_label.config(text=f"Error: {str(e)}", foreground='red')
+                self.progress_var.set(f"Error: {str(e)}")
+            finally:
+                self.progress_bar.stop()
+        
+        threading.Thread(target=auth_thread, daemon=True).start()
+    
+    def test_google_sheets_connection(self):
+        """Test Google Sheets connection"""
+        def test_thread():
+            try:
+                self.progress_var.set("Testing connection...")
+                self.progress_bar.start()
+                
+                if self.google_sync.service:
+                    sheets = self.google_sync.list_sheets()
+                    if sheets:
+                        self.sync_status_label.config(text=f"Connected - {len(sheets)} sheets found", foreground='green')
+                        self.progress_var.set(f"Connection successful! Found {len(sheets)} sheets")
+                    else:
+                        self.sync_status_label.config(text="Connected but no sheets found", foreground='orange')
+                        self.progress_var.set("Connected but no sheets found")
+                else:
+                    self.sync_status_label.config(text="Not authenticated", foreground='red')
+                    self.progress_var.set("Not authenticated")
+                
+            except Exception as e:
+                self.sync_status_label.config(text=f"Connection failed: {str(e)}", foreground='red')
+                self.progress_var.set(f"Connection failed: {str(e)}")
+            finally:
+                self.progress_bar.stop()
+        
+        threading.Thread(target=test_thread, daemon=True).start()
+    
+    def show_setup_instructions(self):
+        """Show Google Sheets setup instructions"""
+        instructions = """
+Google Sheets API Setup Instructions:
+
+1. Go to Google Cloud Console: https://console.cloud.google.com/
+2. Create a new project or select an existing one
+3. Enable the Google Sheets API:
+   - Go to "APIs & Services" > "Library"
+   - Search for "Google Sheets API"
+   - Click "Enable"
+4. Create credentials:
+   - Go to "APIs & Services" > "Credentials"
+   - Click "Create Credentials" > "OAuth 2.0 Client ID"
+   - Choose "Desktop application"
+   - Download the JSON file
+   - Rename it to 'credentials.json' and place in this directory
+5. Set your spreadsheet ID in the configuration above
+6. Click "Authenticate" to complete setup
+
+Your spreadsheet should have these sheets:
+- Ingredients
+- Recipe  
+- Starters
+- PublishNotes
+- Formulas
+        """
+        
+        # Create new window for instructions
+        window = tk.Toplevel(self.root)
+        window.title("Google Sheets Setup Instructions")
+        window.geometry("600x500")
+        
+        text_widget = tk.Text(window, wrap=tk.WORD, padx=10, pady=10)
+        text_widget.pack(fill='both', expand=True)
+        text_widget.insert(1.0, instructions)
+        text_widget.config(state=tk.DISABLED)
+    
+    def export_to_google_sheets(self):
+        """Export database to Google Sheets"""
+        def export_thread():
+            try:
+                self.progress_var.set("Exporting to Google Sheets...")
+                self.progress_bar.start()
+                
+                if not self.google_sync.service:
+                    self.progress_var.set("Not authenticated. Please authenticate first.")
+                    return
+                
+                if self.google_sync.export_to_sheets():
+                    self.progress_var.set("Export completed successfully!")
+                    messagebox.showinfo("Success", "Database exported to Google Sheets successfully!")
+                else:
+                    self.progress_var.set("Export failed!")
+                    messagebox.showerror("Error", "Failed to export to Google Sheets")
+                
+            except Exception as e:
+                self.progress_var.set(f"Export error: {str(e)}")
+                messagebox.showerror("Error", f"Export failed: {str(e)}")
+            finally:
+                self.progress_bar.stop()
+        
+        threading.Thread(target=export_thread, daemon=True).start()
+    
+    def import_from_google_sheets(self):
+        """Import database from Google Sheets"""
+        def import_thread():
+            try:
+                self.progress_var.set("Importing from Google Sheets...")
+                self.progress_bar.start()
+                
+                if not self.google_sync.service:
+                    self.progress_var.set("Not authenticated. Please authenticate first.")
+                    return
+                
+                # Ask for confirmation
+                if messagebox.askyesno("Confirm Import", 
+                                     "This will replace all data in your local database with data from Google Sheets. Continue?"):
+                    if self.google_sync.import_from_sheets():
+                        self.progress_var.set("Import completed successfully!")
+                        messagebox.showinfo("Success", "Database imported from Google Sheets successfully!")
+                        # Refresh all data in GUI
+                        self.load_ingredients()
+                        self.load_recipes()
+                        self.load_starter_data()
+                        self.load_batch_ids()
+                        self.load_statistics()
+                    else:
+                        self.progress_var.set("Import failed!")
+                        messagebox.showerror("Error", "Failed to import from Google Sheets")
+                
+            except Exception as e:
+                self.progress_var.set(f"Import error: {str(e)}")
+                messagebox.showerror("Error", f"Import failed: {str(e)}")
+            finally:
+                self.progress_bar.stop()
+        
+        threading.Thread(target=import_thread, daemon=True).start()
+    
+    def open_google_spreadsheet(self):
+        """Open Google Spreadsheet in browser"""
+        if self.google_sync.spreadsheet_id:
+            import webbrowser
+            url = self.google_sync.get_spreadsheet_url()
+            webbrowser.open(url)
+        else:
+            messagebox.showerror("Error", "No spreadsheet ID set")
     
     def __del__(self):
         """Cleanup database connection"""

@@ -68,3 +68,33 @@ The GUI provides an intuitive interface for:
 2. Navigate between tabs to add different types of data
 3. Use the "Load Data" buttons to refresh dropdown lists
 4. View statistics in the "View Data" tab
+
+## Google Sheets Integration
+
+### Setup Google Sheets Sync
+1. Install Google API dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. Set up Google Sheets API credentials:
+   ```bash
+   python setup_google_sheets.py
+   ```
+
+3. Follow the setup wizard to:
+   - Configure Google Cloud Console credentials
+   - Create or link a Google Spreadsheet
+   - Test the sync functionality
+
+### Using Google Sheets Sync
+- **Export to Google Sheets**: Upload your local database to Google Sheets
+- **Import from Google Sheets**: Download data from Google Sheets to local database
+- **Automatic Backup**: Keep your data synchronized across devices
+- **Collaborative Editing**: Share your spreadsheet with team members
+
+### Google Sheets Tab Features
+- **Authentication**: Connect to your Google account
+- **Configuration**: Set your spreadsheet ID
+- **Sync Operations**: Export/import data with progress tracking
+- **Status Monitoring**: Real-time sync status and error reporting

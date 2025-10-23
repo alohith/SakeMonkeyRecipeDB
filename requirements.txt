@@ -1,4 +1,9 @@
 openpyxl==3.1.2
 pandas==2.1.4
 python-dateutil==2.8.2
+# Google Sheets API
+google-auth==2.23.4
+google-auth-oauthlib==1.1.0
+google-auth-httplib2==0.1.1
+google-api-python-client==2.108.0
 # GUI dependencies (tkinter comes with Python)
