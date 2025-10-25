@@ -19,7 +19,7 @@ def create_database():
         CREATE TABLE IF NOT EXISTS ingredients (
             ingredientID TEXT PRIMARY KEY,
             ingredient_type TEXT NOT NULL,
-            acc_date TEXT,
+            acc_date DATE,
             source TEXT,
             description TEXT
         )
@@ -29,19 +29,41 @@ def create_database():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS recipe (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            start_date TEXT,
-            pouch_date TEXT,
+            start_date DATE,
+            pouch_date DATE,
             batchID TEXT UNIQUE NOT NULL,
-            batch TEXT,
-            style TEXT,
+            batch INTEGER,
+            style TEXT CHECK(style IN ('pure', 'rustic', 'rustic_experimental')),
             kake TEXT,
             koji TEXT,
             yeast TEXT,
             starter TEXT,
             water_type TEXT,
+            total_kake_g REAL,
+            total_koji_g REAL,
+            total_water_mL REAL,
+            ferment_temp_C REAL,
+            addition1_notes TEXT,
+            addition2_notes TEXT,
+            addition3_notes TEXT,
+            ferment_finish_gravity REAL,
+            ferment_finish_brix REAL,
+            final_measured_temp_C REAL,
+            final_measured_gravity REAL,
+            final_measured_brix REAL,
+            final_gravity REAL,
+            abv REAL,
+            smv REAL,
+            final_water_addition_mL REAL,
+            clarified BOOLEAN,
+            pasteurized BOOLEAN,
+            pasteurization_notes TEXT,
+            finishing_additions TEXT,
             FOREIGN KEY (kake) REFERENCES ingredients(ingredientID),
             FOREIGN KEY (koji) REFERENCES ingredients(ingredientID),
-            FOREIGN KEY (yeast) REFERENCES ingredients(ingredientID)
+            FOREIGN KEY (yeast) REFERENCES ingredients(ingredientID),
+            FOREIGN KEY (starter) REFERENCES starters(starter_batch),
+            FOREIGN KEY (water_type) REFERENCES ingredients(ingredientID)
         )
     ''')
     
@@ -49,7 +71,7 @@ def create_database():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS starters (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            date TEXT,
+            date DATE,
             starter_batch TEXT,
             batchID TEXT,
             amt_kake REAL,
@@ -59,7 +81,12 @@ def create_database():
             kake TEXT,
             koji TEXT,
             yeast TEXT,
+            lactic_acid REAL,
+            MgSO4 REAL,
+            KCl REAL,
+            temp_C REAL,
             FOREIGN KEY (batchID) REFERENCES recipe(batchID),
+            FOREIGN KEY (water_type) REFERENCES ingredients(ingredientID),
             FOREIGN KEY (kake) REFERENCES ingredients(ingredientID),
             FOREIGN KEY (koji) REFERENCES ingredients(ingredientID),
             FOREIGN KEY (yeast) REFERENCES ingredients(ingredientID)
@@ -71,15 +98,16 @@ def create_database():
         CREATE TABLE IF NOT EXISTS publish_notes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             batchID TEXT,
-            pouch_date TEXT,
-            style TEXT,
+            pouch_date DATE,
+            style TEXT CHECK(style IN ('pure', 'rustic', 'rustic_experimental')),
             water TEXT,
             abv REAL,
             smv REAL,
             batch_size_l REAL,
             rice TEXT,
             description TEXT,
-            FOREIGN KEY (batchID) REFERENCES recipe(batchID)
+            FOREIGN KEY (batchID) REFERENCES recipe(batchID),
+            FOREIGN KEY (water) REFERENCES ingredients(ingredientID)
         )
     ''')
     
@@ -87,13 +115,13 @@ def create_database():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS formulas (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            measure_temp_c REAL,
+            calibrated_temp_c REAL DEFAULT 20.0,
+            measured_temp_c REAL,
             measured_sg REAL,
             measured_brix REAL,
-            final_sg REAL,
-            abv REAL,
-            smv REAL,
-            brix REAL,
+            corrected_gravity REAL,
+            calculated_abv REAL,
+            calculated_smv REAL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')

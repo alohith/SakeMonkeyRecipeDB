@@ -1,0 +1,54 @@
+recipe table: 
+start_date indicates the date a batch starts (use a date type)
+pouch_date indicates when the batch was completed and pouched (use a date type)
+batchID is the unifying reference key across tables for the batch
+batch is an increment on batch made
+style is a categorical limited to the few types you have seen (pure,rustic,rustic_experimental)
+kake must be a ingrdientID with a rice type or the designated kake_rice or koji_rice from the ingredient table
+koji must be a ingrdientID with a rice type or the designated kake_rice or koji_rice from the ingredient table
+yeast must be ingredientID with a yeast type from the ingredient table
+starter must refer to a StarterBatch from the starters table
+water_type is a categorical ingredientID from the ingredient table of the category water (spring, well, distilled)
+total_kake_g running total of kake rice added to the batch across all the additions including the amount the batch was started with
+total_koji_g running total of koji rice added to the batch across all the additions including the amount the batch was started with
+total_water_mL running total of water in ml added to the batch across all the additions including the amount the batch was started with
+ferment_temp_C is the temperature in C that the ferment was conducted at
+Addition1_Notes any notes to add when first addition of kake rice and koji rice to the StarterBatch
+Addition2_Notes any notes to add when first addition of kake rice and koji rice to the StarterBatch
+Addition3_Notes any notes to add when first addition of kake rice and koji rice to the StarterBatch
+ferment_finish_gravity is the measured specific gravity at our self determined end of ferment to be used on the formulas to do live all the calculations made (corrected gravity, ABV%, SMV)
+ferment_finish_brix is the measured percent brix at our self determined end of ferment to be used on the formulas to do live all the calculations made (corrected gravity, ABV%, SMV)
+final_measured_temp_C is the measured temperature in C at which final measurments took place
+final_measured_gravity is a measured float value for the specific gravity of the final product
+final_measured_Brix_% is a measured float value for perecent brix
+final_gravity is a calculated formula using values from the table  if(not(isblank(final_measured_temp_C)), LET(  mt, INDEX(final_measured_temp_C, ROW()),  mg, INDEX(final_measured_gravity, ROW()),  ct, 20,  pmt, 0.999005559846799 - 0.000020305299748608*mt + 0.0000058871378337408*mt^2 - 0.00000001357811768736*mt^3,  pct, 0.999005559846799 - 0.000020305299748608*ct + 0.0000058871378337408*ct^2 - 0.00000001357811768736*ct^3,  ROUND(mg * pmt / pct, 4)),"") --- ct is calibrated temp for the hydrometer include an option to enter a different temp but default to 20
+ABV_% is a calculated formula using values from the table  if(not(isblank(final_measured_temp_C)), let(b, index(final_measured_Brix_%, ROW()), fg, index(final_gravity, ROW()), round(1.646*b-2.703*(145-145/fg)-1.794,1)),"")
+SMV is a calculated formula using values from the table  if(not(isblank(final_measured_temp_C)), let(fg, index(final_gravity, ROW()), ROUND(1443/fg-1443,1)), "")
+final_water_addition_mL how much water was added to the final ferment to before proofing down for the final measurements?
+clarified boolean if process was undertaken (can be check box)
+pasteurized boolean if process was undertaken (can be check box)
+pasteruization_notes if pasteurized process taken, what notes if any are there?
+finishing_additions what final addtion notes are there?
+
+
+Ingredients table: ID indicates in-database reference for that ingredient type indicates what type of ingredient (category rice can be used for making koji or kake), acc_date indicate accession date into the database as a defined ingredient
+
+
+Starters table: Date is the date the starter was created (should be a DATE type); StarterBatch is a in-database ID to be used when noting starting conditons of a batch; BatchID is the unifying ID for a batch across tables and the batch that this starter entry is going into; Amt_Kake is how much kake rice was added into the starter in grams and should contribute to the total_kake_g column in the recipe table; Amt_Koji is how much koji rice was added into the starter in grams and should contribute to the total_koji_g column in the recipe table; Amt_water is how much liquid was added to the starter in ml; water_type is a categorical ingredientID from the ingredient table of the category water (spring, well, distilled); Kake is ingredientID for a rice or kake_rice type from the ingredient table; Koji is ingredientID for a rice or koji_rice type from the ingredient table; yeast is ingredientID for a yeast type from the ingredient table;lactic_acid should be grames of lactic acid solution added;MgSO4 should be grams of MgSO4 added;KCl should be grams of KCL added; temp_C is a temperature in C at which the starter began it's ferment
+
+
+PublishNotes Table: pared down version of details from the recipe table, using good puncutation and grammar for public view
+BatchID the unifying reference key across tables for the batch
+Pouch_Date indicates when the batch was completed and pouched (use a date type)
+Style a categorical limited to the few types you have seen (pure,rustic,rustic_experimental)
+Water is a categorical ingredientID from the ingredient table of the category water (spring, well, distilled)
+ABV ABV_% value from recipe table
+SMV SMV value from recipe table
+Batch_Size_L total_water_mL from recipe table plus any final water or finishing additions volume converted to L
+Rice description of kake_rice used in the batch coming from the ingredient table
+Description tasting notes and brief sake recipe description.
+
+
+formulas page should be a live calculator based on entered values, for mocking up and determining any final additions to add. include:
+entry feilds for calibrated hydrometer temp (assume 20C), measured specific gravity, measured %Brix
+live calculate SMV and ABV% from corrected gravity and measured %brix values

@@ -51,6 +51,7 @@ class SakeRecipeGUI:
         self.create_recipes_tab()
         self.create_starters_tab()
         self.create_publish_notes_tab()
+        self.create_formulas_tab()
         self.create_view_data_tab()
         
         # Add Google Sheets tab if available
@@ -77,7 +78,7 @@ class SakeRecipeGUI:
         
         ttk.Label(form_frame, text="Type:").grid(row=1, column=0, sticky='w', pady=2)
         self.ingredient_type_combo = ttk.Combobox(form_frame, width=27, values=[
-            'yeast', 'koji_rice', 'kake_rice', 'rice', 'nutrientMix', 'water', 'other'
+            'yeast', 'rice', 'nutrientMix', 'water', 'other'
         ])
         self.ingredient_type_combo.grid(row=1, column=1, pady=2, padx=(5, 0))
         
@@ -89,7 +90,7 @@ class SakeRecipeGUI:
         self.ingredient_source_entry = ttk.Entry(form_frame, width=30)
         self.ingredient_source_entry.grid(row=3, column=1, pady=2, padx=(5, 0))
         
-        ttk.Label(form_frame, text="Access Date:").grid(row=4, column=0, sticky='w', pady=2)
+        ttk.Label(form_frame, text="Accession Date:").grid(row=4, column=0, sticky='w', pady=2)
         self.ingredient_date_entry = ttk.Entry(form_frame, width=30)
         self.ingredient_date_entry.grid(row=4, column=1, pady=2, padx=(5, 0))
         self.ingredient_date_entry.insert(0, datetime.now().strftime('%Y-%m-%d'))
@@ -179,9 +180,63 @@ class SakeRecipeGUI:
         self.recipe_pouch_date_entry = ttk.Entry(form_frame, width=30)
         self.recipe_pouch_date_entry.grid(row=4, column=3, pady=2, padx=(5, 0))
         
+        # Additional recipe fields
+        ttk.Label(form_frame, text="Total Kake (g):").grid(row=5, column=0, sticky='w', pady=2)
+        self.recipe_total_kake_entry = ttk.Entry(form_frame, width=30)
+        self.recipe_total_kake_entry.grid(row=5, column=1, pady=2, padx=(5, 0))
+        
+        ttk.Label(form_frame, text="Total Koji (g):").grid(row=5, column=2, sticky='w', pady=2, padx=(20, 0))
+        self.recipe_total_koji_entry = ttk.Entry(form_frame, width=30)
+        self.recipe_total_koji_entry.grid(row=5, column=3, pady=2, padx=(5, 0))
+        
+        ttk.Label(form_frame, text="Total Water (mL):").grid(row=6, column=0, sticky='w', pady=2)
+        self.recipe_total_water_entry = ttk.Entry(form_frame, width=30)
+        self.recipe_total_water_entry.grid(row=6, column=1, pady=2, padx=(5, 0))
+        
+        ttk.Label(form_frame, text="Ferment Temp (°C):").grid(row=6, column=2, sticky='w', pady=2, padx=(20, 0))
+        self.recipe_ferment_temp_entry = ttk.Entry(form_frame, width=30)
+        self.recipe_ferment_temp_entry.grid(row=6, column=3, pady=2, padx=(5, 0))
+        
+        # Addition notes
+        ttk.Label(form_frame, text="Addition 1 Notes:").grid(row=7, column=0, sticky='w', pady=2)
+        self.recipe_addition1_entry = ttk.Entry(form_frame, width=30)
+        self.recipe_addition1_entry.grid(row=7, column=1, pady=2, padx=(5, 0))
+        
+        ttk.Label(form_frame, text="Addition 2 Notes:").grid(row=7, column=2, sticky='w', pady=2, padx=(20, 0))
+        self.recipe_addition2_entry = ttk.Entry(form_frame, width=30)
+        self.recipe_addition2_entry.grid(row=7, column=3, pady=2, padx=(5, 0))
+        
+        ttk.Label(form_frame, text="Addition 3 Notes:").grid(row=8, column=0, sticky='w', pady=2)
+        self.recipe_addition3_entry = ttk.Entry(form_frame, width=30)
+        self.recipe_addition3_entry.grid(row=8, column=1, pady=2, padx=(5, 0))
+        
+        # Final measurements (maps to final_measured_* fields)
+        ttk.Label(form_frame, text="Final Measured Temp (°C):").grid(row=8, column=2, sticky='w', pady=2, padx=(20, 0))
+        self.recipe_final_temp_entry = ttk.Entry(form_frame, width=30)
+        self.recipe_final_temp_entry.grid(row=8, column=3, pady=2, padx=(5, 0))
+        
+        ttk.Label(form_frame, text="Final Measured Gravity:").grid(row=9, column=0, sticky='w', pady=2)
+        self.recipe_final_gravity_entry = ttk.Entry(form_frame, width=30)
+        self.recipe_final_gravity_entry.grid(row=9, column=1, pady=2, padx=(5, 0))
+        
+        ttk.Label(form_frame, text="Final Measured Brix (%):").grid(row=9, column=2, sticky='w', pady=2, padx=(20, 0))
+        self.recipe_final_brix_entry = ttk.Entry(form_frame, width=30)
+        self.recipe_final_brix_entry.grid(row=9, column=3, pady=2, padx=(5, 0))
+        
+        # Process checkboxes
+        ttk.Label(form_frame, text="Process:").grid(row=10, column=0, sticky='w', pady=2)
+        process_frame = ttk.Frame(form_frame)
+        process_frame.grid(row=10, column=1, columnspan=3, sticky='w', pady=2, padx=(5, 0))
+        
+        self.recipe_clarified_var = tk.BooleanVar()
+        self.recipe_pasteurized_var = tk.BooleanVar()
+        
+        ttk.Checkbutton(process_frame, text="Clarified", variable=self.recipe_clarified_var).pack(side='left', padx=5)
+        ttk.Checkbutton(process_frame, text="Pasteurized", variable=self.recipe_pasteurized_var).pack(side='left', padx=5)
+        
         # Buttons
         button_frame = ttk.Frame(form_frame)
-        button_frame.grid(row=5, column=0, columnspan=4, pady=10)
+        button_frame.grid(row=11, column=0, columnspan=4, pady=10)
         
         ttk.Button(button_frame, text="Add Recipe", command=self.add_recipe).pack(side='left', padx=5)
         ttk.Button(button_frame, text="Clear Form", command=self.clear_recipe_form).pack(side='left', padx=5)
@@ -263,9 +318,26 @@ class SakeRecipeGUI:
         self.starter_yeast_combo = ttk.Combobox(form_frame, width=27)
         self.starter_yeast_combo.grid(row=4, column=3, pady=2, padx=(5, 0))
         
+        # Additional fields for starter chemistry
+        ttk.Label(form_frame, text="Lactic Acid (g):").grid(row=5, column=0, sticky='w', pady=2)
+        self.starter_lactic_acid_entry = ttk.Entry(form_frame, width=30)
+        self.starter_lactic_acid_entry.grid(row=5, column=1, pady=2, padx=(5, 0))
+        
+        ttk.Label(form_frame, text="MgSO4 (g):").grid(row=5, column=2, sticky='w', pady=2, padx=(20, 0))
+        self.starter_mgso4_entry = ttk.Entry(form_frame, width=30)
+        self.starter_mgso4_entry.grid(row=5, column=3, pady=2, padx=(5, 0))
+        
+        ttk.Label(form_frame, text="KCl (g):").grid(row=6, column=0, sticky='w', pady=2)
+        self.starter_kcl_entry = ttk.Entry(form_frame, width=30)
+        self.starter_kcl_entry.grid(row=6, column=1, pady=2, padx=(5, 0))
+        
+        ttk.Label(form_frame, text="Temperature (°C):").grid(row=6, column=2, sticky='w', pady=2, padx=(20, 0))
+        self.starter_temp_entry = ttk.Entry(form_frame, width=30)
+        self.starter_temp_entry.grid(row=6, column=3, pady=2, padx=(5, 0))
+        
         # Buttons
         button_frame = ttk.Frame(form_frame)
-        button_frame.grid(row=5, column=0, columnspan=4, pady=10)
+        button_frame.grid(row=7, column=0, columnspan=4, pady=10)
         
         ttk.Button(button_frame, text="Add Starter", command=self.add_starter).pack(side='left', padx=5)
         ttk.Button(button_frame, text="Clear Form", command=self.clear_starter_form).pack(side='left', padx=5)
@@ -276,7 +348,7 @@ class SakeRecipeGUI:
         list_frame.pack(fill='both', expand=True, padx=10, pady=5)
         
         # Treeview for starters
-        columns = ('Date', 'Starter Batch', 'Batch ID', 'Amt Kake', 'Amt Koji', 'Amt Water', 'Yeast')
+        columns = ('Date', 'Starter Batch', 'Batch ID', 'Amt Kake', 'Amt Koji', 'Amt Water', 'Yeast', 'Temp °C')
         self.starters_tree = ttk.Treeview(list_frame, columns=columns, show='headings', height=8)
         
         for col in columns:
@@ -368,6 +440,80 @@ class SakeRecipeGUI:
         
         self.publish_tree.pack(side='left', fill='both', expand=True)
         scrollbar.pack(side='right', fill='y')
+    
+    def create_formulas_tab(self):
+        """Create live formula calculator tab"""
+        formulas_frame = ttk.Frame(self.notebook)
+        self.notebook.add(formulas_frame, text="Live Calculator")
+        
+        # Title
+        title_label = ttk.Label(formulas_frame, text="Live Brewing Calculator", font=('Arial', 16, 'bold'))
+        title_label.pack(pady=10)
+        
+        # Calculator frame
+        calc_frame = ttk.LabelFrame(formulas_frame, text="Hydrometer & Brix Calculator", padding=10)
+        calc_frame.pack(fill='both', expand=True, padx=10, pady=5)
+        
+        # Input fields
+        ttk.Label(calc_frame, text="Calibrated Hydrometer Temp (°C):").grid(row=0, column=0, sticky='w', pady=5)
+        self.calc_calibrated_temp_entry = ttk.Entry(calc_frame, width=20)
+        self.calc_calibrated_temp_entry.grid(row=0, column=1, pady=5, padx=(5, 0))
+        self.calc_calibrated_temp_entry.insert(0, "20.0")
+        
+        ttk.Label(calc_frame, text="Measured Temperature (°C):").grid(row=1, column=0, sticky='w', pady=5)
+        self.calc_measured_temp_entry = ttk.Entry(calc_frame, width=20)
+        self.calc_measured_temp_entry.grid(row=1, column=1, pady=5, padx=(5, 0))
+        self.calc_measured_temp_entry.bind('<KeyRelease>', self.calculate_formulas)
+        
+        ttk.Label(calc_frame, text="Measured Specific Gravity:").grid(row=2, column=0, sticky='w', pady=5)
+        self.calc_measured_sg_entry = ttk.Entry(calc_frame, width=20)
+        self.calc_measured_sg_entry.grid(row=2, column=1, pady=5, padx=(5, 0))
+        self.calc_measured_sg_entry.bind('<KeyRelease>', self.calculate_formulas)
+        
+        ttk.Label(calc_frame, text="Measured Brix (%):").grid(row=3, column=0, sticky='w', pady=5)
+        self.calc_measured_brix_entry = ttk.Entry(calc_frame, width=20)
+        self.calc_measured_brix_entry.grid(row=3, column=1, pady=5, padx=(5, 0))
+        self.calc_measured_brix_entry.bind('<KeyRelease>', self.calculate_formulas)
+        
+        # Results frame
+        results_frame = ttk.LabelFrame(calc_frame, text="Calculated Results", padding=10)
+        results_frame.grid(row=4, column=0, columnspan=2, sticky='ew', pady=10)
+        
+        ttk.Label(results_frame, text="Corrected Gravity:").grid(row=0, column=0, sticky='w', pady=2)
+        self.calc_corrected_gravity_label = ttk.Label(results_frame, text="", font=('Arial', 10, 'bold'))
+        self.calc_corrected_gravity_label.grid(row=0, column=1, sticky='w', pady=2, padx=(10, 0))
+        
+        ttk.Label(results_frame, text="ABV (%):").grid(row=1, column=0, sticky='w', pady=2)
+        self.calc_abv_label = ttk.Label(results_frame, text="", font=('Arial', 10, 'bold'))
+        self.calc_abv_label.grid(row=1, column=1, sticky='w', pady=2, padx=(10, 0))
+        
+        ttk.Label(results_frame, text="SMV:").grid(row=2, column=0, sticky='w', pady=2)
+        self.calc_smv_label = ttk.Label(results_frame, text="", font=('Arial', 10, 'bold'))
+        self.calc_smv_label.grid(row=2, column=1, sticky='w', pady=2, padx=(10, 0))
+        
+        # Buttons
+        button_frame = ttk.Frame(calc_frame)
+        button_frame.grid(row=5, column=0, columnspan=2, pady=10)
+        
+        ttk.Button(button_frame, text="Save Calculation", command=self.save_calculation).pack(side='left', padx=5)
+        ttk.Button(button_frame, text="Clear Form", command=self.clear_calc_form).pack(side='left', padx=5)
+        
+        # History frame
+        history_frame = ttk.LabelFrame(formulas_frame, text="Calculation History", padding=10)
+        history_frame.pack(fill='both', expand=True, padx=10, pady=5)
+        
+        # Treeview for calculation history
+        columns = ('Date', 'Cal Temp', 'Meas Temp', 'Meas SG', 'Meas Brix', 'Corrected SG', 'ABV%', 'SMV')
+        self.calc_history_tree = ttk.Treeview(history_frame, columns=columns, show='headings', height=8)
+        
+        for col in columns:
+            self.calc_history_tree.heading(col, text=col)
+            self.calc_history_tree.column(col, width=100)
+        
+        self.calc_history_tree.pack(fill='both', expand=True)
+        
+        # Load calculation history
+        self.load_calculation_history()
     
     def create_view_data_tab(self):
         """Create data viewing tab"""
@@ -471,14 +617,20 @@ class SakeRecipeGUI:
         ingredient_list = [f"{row[0]} ({row[1]})" for row in ingredients]
         
         # Update recipe comboboxes
-        self.recipe_kake_combo['values'] = [row[0] for row in ingredients if 'rice' in row[1]]
-        self.recipe_koji_combo['values'] = [row[0] for row in ingredients if 'koji' in row[1]]
+        # Rice can be used for both koji and kake
+        rice_ingredients = [row[0] for row in ingredients if row[1] == 'rice']
+        self.recipe_kake_combo['values'] = rice_ingredients
+        self.recipe_koji_combo['values'] = rice_ingredients
         self.recipe_yeast_combo['values'] = [row[0] for row in ingredients if row[1] == 'yeast']
         
         # Update starter comboboxes
-        self.starter_kake_combo['values'] = [row[0] for row in ingredients if 'rice' in row[1]]
-        self.starter_koji_combo['values'] = [row[0] for row in ingredients if 'koji' in row[1]]
+        # Rice can be used for both koji and kake
+        self.starter_kake_combo['values'] = rice_ingredients
+        self.starter_koji_combo['values'] = rice_ingredients
         self.starter_yeast_combo['values'] = [row[0] for row in ingredients if row[1] == 'yeast']
+        
+        # Update water type combobox
+        self.starter_water_combo['values'] = [row[0] for row in ingredients if row[1] == 'water']
         
         # Load ingredients tree
         self.ingredients_tree.delete(*self.ingredients_tree.get_children())
@@ -517,7 +669,8 @@ class SakeRecipeGUI:
                 starter['amt_kake'] or '',
                 starter['amt_koji'] or '',
                 starter['amt_water'] or '',
-                starter['yeast'] or ''
+                starter['yeast'] or '',
+                starter['temp_C'] or ''
             ))
     
     def load_batch_ids(self):
@@ -603,8 +756,11 @@ class SakeRecipeGUI:
             cursor = self.conn.cursor()
             cursor.execute("""
                 INSERT INTO recipe (batchID, batch, style, kake, koji, yeast, starter, 
-                                   water_type, start_date, pouch_date)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                   water_type, start_date, pouch_date, total_kake_g, total_koji_g, 
+                                   total_water_mL, ferment_temp_C, addition1_notes, addition2_notes, 
+                                   addition3_notes, final_measured_temp_C, final_measured_gravity, 
+                                   final_measured_brix, clarified, pasteurized)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 self.recipe_batch_id_entry.get(),
                 self.recipe_batch_entry.get(),
@@ -615,7 +771,19 @@ class SakeRecipeGUI:
                 self.recipe_starter_entry.get(),
                 self.recipe_water_combo.get(),
                 self.recipe_start_date_entry.get(),
-                self.recipe_pouch_date_entry.get()
+                self.recipe_pouch_date_entry.get(),
+                self.recipe_total_kake_entry.get(),
+                self.recipe_total_koji_entry.get(),
+                self.recipe_total_water_entry.get(),
+                self.recipe_ferment_temp_entry.get(),
+                self.recipe_addition1_entry.get(),
+                self.recipe_addition2_entry.get(),
+                self.recipe_addition3_entry.get(),
+                self.recipe_final_temp_entry.get(),
+                self.recipe_final_gravity_entry.get(),
+                self.recipe_final_brix_entry.get(),
+                self.recipe_clarified_var.get(),
+                self.recipe_pasteurized_var.get()
             ))
             self.conn.commit()
             messagebox.showinfo("Success", "Recipe added successfully!")
@@ -632,8 +800,8 @@ class SakeRecipeGUI:
             cursor = self.conn.cursor()
             cursor.execute("""
                 INSERT INTO starters (date, starter_batch, batchID, amt_kake, amt_koji, amt_water, 
-                                     water_type, kake, koji, yeast)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                     water_type, kake, koji, yeast, lactic_acid, MgSO4, KCl, temp_C)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 self.starter_date_entry.get(),
                 self.starter_batch_entry.get(),
@@ -644,7 +812,11 @@ class SakeRecipeGUI:
                 self.starter_water_combo.get(),
                 self.starter_kake_combo.get(),
                 self.starter_koji_combo.get(),
-                self.starter_yeast_combo.get()
+                self.starter_yeast_combo.get(),
+                self.starter_lactic_acid_entry.get(),
+                self.starter_mgso4_entry.get(),
+                self.starter_kcl_entry.get(),
+                self.starter_temp_entry.get()
             ))
             self.conn.commit()
             messagebox.showinfo("Success", "Starter added successfully!")
@@ -701,6 +873,123 @@ class SakeRecipeGUI:
         self.recipe_start_date_entry.delete(0, tk.END)
         self.recipe_start_date_entry.insert(0, datetime.now().strftime('%Y-%m-%d'))
         self.recipe_pouch_date_entry.delete(0, tk.END)
+        self.recipe_total_kake_entry.delete(0, tk.END)
+        self.recipe_total_koji_entry.delete(0, tk.END)
+        self.recipe_total_water_entry.delete(0, tk.END)
+        self.recipe_ferment_temp_entry.delete(0, tk.END)
+        self.recipe_addition1_entry.delete(0, tk.END)
+        self.recipe_addition2_entry.delete(0, tk.END)
+        self.recipe_addition3_entry.delete(0, tk.END)
+        self.recipe_final_temp_entry.delete(0, tk.END)
+        self.recipe_final_gravity_entry.delete(0, tk.END)
+        self.recipe_final_brix_entry.delete(0, tk.END)
+        self.recipe_clarified_var.set(False)
+        self.recipe_pasteurized_var.set(False)
+    
+    def calculate_formulas(self, event=None):
+        """Calculate corrected gravity, ABV, and SMV"""
+        try:
+            # Get input values
+            calibrated_temp = float(self.calc_calibrated_temp_entry.get() or 20.0)
+            measured_temp = float(self.calc_measured_temp_entry.get() or 0)
+            measured_sg = float(self.calc_measured_sg_entry.get() or 0)
+            measured_brix = float(self.calc_measured_brix_entry.get() or 0)
+            
+            if measured_temp == 0 or measured_sg == 0 or measured_brix == 0:
+                # Clear results if any required field is empty
+                self.calc_corrected_gravity_label.config(text="")
+                self.calc_abv_label.config(text="")
+                self.calc_smv_label.config(text="")
+                return
+            
+            # Calculate corrected gravity using temperature correction formula
+            # Formula: corrected_gravity = measured_gravity * (density_at_measured_temp / density_at_calibrated_temp)
+            mt = measured_temp
+            mg = measured_sg
+            ct = calibrated_temp
+            
+            # Density calculation at measured temperature
+            pmt = 0.999005559846799 - 0.000020305299748608*mt + 0.0000058871378337408*mt**2 - 0.00000001357811768736*mt**3
+            
+            # Density calculation at calibrated temperature
+            pct = 0.999005559846799 - 0.000020305299748608*ct + 0.0000058871378337408*ct**2 - 0.00000001357811768736*ct**3
+            
+            corrected_gravity = round(mg * pmt / pct, 4)
+            
+            # Calculate ABV using corrected gravity and brix
+            b = measured_brix
+            fg = corrected_gravity
+            abv = round(1.646*b - 2.703*(145 - 145/fg) - 1.794, 1)
+            
+            # Calculate SMV using corrected gravity
+            smv = round(1443/fg - 1443, 1)
+            
+            # Update labels
+            self.calc_corrected_gravity_label.config(text=f"{corrected_gravity}")
+            self.calc_abv_label.config(text=f"{abv}%")
+            self.calc_smv_label.config(text=f"{smv}")
+            
+        except (ValueError, ZeroDivisionError):
+            # Clear results if calculation fails
+            self.calc_corrected_gravity_label.config(text="")
+            self.calc_abv_label.config(text="")
+            self.calc_smv_label.config(text="")
+    
+    def save_calculation(self):
+        """Save calculation to database"""
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute("""
+                INSERT INTO formulas (calibrated_temp_c, measured_temp_c, measured_sg, measured_brix, 
+                                     corrected_gravity, calculated_abv, calculated_smv)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (
+                self.calc_calibrated_temp_entry.get(),
+                self.calc_measured_temp_entry.get(),
+                self.calc_measured_sg_entry.get(),
+                self.calc_measured_brix_entry.get(),
+                self.calc_corrected_gravity_label.cget("text") if self.calc_corrected_gravity_label.cget("text") else None,
+                self.calc_abv_label.cget("text").replace("%", "") if self.calc_abv_label.cget("text") else None,
+                self.calc_smv_label.cget("text") if self.calc_smv_label.cget("text") else None
+            ))
+            self.conn.commit()
+            messagebox.showinfo("Success", "Calculation saved successfully!")
+            self.load_calculation_history()
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to save calculation: {str(e)}")
+    
+    def clear_calc_form(self):
+        """Clear calculator form"""
+        self.calc_calibrated_temp_entry.delete(0, tk.END)
+        self.calc_calibrated_temp_entry.insert(0, "20.0")
+        self.calc_measured_temp_entry.delete(0, tk.END)
+        self.calc_measured_sg_entry.delete(0, tk.END)
+        self.calc_measured_brix_entry.delete(0, tk.END)
+        self.calc_corrected_gravity_label.config(text="")
+        self.calc_abv_label.config(text="")
+        self.calc_smv_label.config(text="")
+    
+    def load_calculation_history(self):
+        """Load calculation history from database"""
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute("SELECT * FROM formulas ORDER BY created_at DESC")
+            calculations = cursor.fetchall()
+            
+            self.calc_history_tree.delete(*self.calc_history_tree.get_children())
+            for calc in calculations:
+                self.calc_history_tree.insert('', 'end', values=(
+                    calc['created_at'][:10] if calc['created_at'] else '',
+                    calc['calibrated_temp_c'] or '',
+                    calc['measured_temp_c'] or '',
+                    calc['measured_sg'] or '',
+                    calc['measured_brix'] or '',
+                    calc['corrected_gravity'] or '',
+                    f"{calc['calculated_abv']}%" if calc['calculated_abv'] else '',
+                    calc['calculated_smv'] or ''
+                ))
+        except Exception as e:
+            print(f"Error loading calculation history: {e}")
     
     def clear_starter_form(self):
         """Clear starter form"""
@@ -715,6 +1004,10 @@ class SakeRecipeGUI:
         self.starter_kake_combo.set('')
         self.starter_koji_combo.set('')
         self.starter_yeast_combo.set('')
+        self.starter_lactic_acid_entry.delete(0, tk.END)
+        self.starter_mgso4_entry.delete(0, tk.END)
+        self.starter_kcl_entry.delete(0, tk.END)
+        self.starter_temp_entry.delete(0, tk.END)
     
     def clear_publish_form(self):
         """Clear publish form"""
