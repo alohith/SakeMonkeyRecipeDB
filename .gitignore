@@ -39,9 +39,12 @@ venv.bak/
 *.swp
 *.swo
 
-# OS
+# OS and Google
 .DS_Store
 Thumbs.db
+credentials.json
+service_account.json
+*.json
 
 # Logs
 *.log

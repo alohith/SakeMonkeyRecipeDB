@@ -14,8 +14,8 @@ total_koji_g running total of koji rice added to the batch across all the additi
 total_water_mL running total of water in ml added to the batch across all the additions including the amount the batch was started with
 ferment_temp_C is the temperature in C that the ferment was conducted at
 Addition1_Notes any notes to add when first addition of kake rice and koji rice to the StarterBatch
-Addition2_Notes any notes to add when first addition of kake rice and koji rice to the StarterBatch
-Addition3_Notes any notes to add when first addition of kake rice and koji rice to the StarterBatch
+Addition2_Notes any notes to add during the second addition of kake rice and koji rice to the batch
+Addition3_Notes any notes to add during the thrid addition of kake rice and koji rice to the batch
 ferment_finish_gravity is the measured specific gravity at our self determined end of ferment to be used on the formulas to do live all the calculations made (corrected gravity, ABV%, SMV)
 ferment_finish_brix is the measured percent brix at our self determined end of ferment to be used on the formulas to do live all the calculations made (corrected gravity, ABV%, SMV)
 final_measured_temp_C is the measured temperature in C at which final measurments took place

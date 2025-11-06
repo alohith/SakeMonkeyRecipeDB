@@ -20,3 +20,4 @@ except ImportError as e:
 except Exception as e:
     print(f"Error starting GUI: {e}")
     input("Press Enter to exit...")
+

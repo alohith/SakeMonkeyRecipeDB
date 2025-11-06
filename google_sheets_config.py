@@ -72,3 +72,4 @@ def is_auto_sync_enabled():
 def get_sync_interval():
     """Get sync interval in minutes"""
     return GOOGLE_SHEETS_CONFIG['sync_interval_minutes']
+

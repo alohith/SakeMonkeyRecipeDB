@@ -37,3 +37,5 @@
 
 ## Key Insight:
 Rice is a single ingredient type that can be used for multiple purposes (koji or kake), rather than having separate categories for each use case.
+
+

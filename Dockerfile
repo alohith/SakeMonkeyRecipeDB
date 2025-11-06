@@ -45,3 +45,5 @@ exec python gui_app.py' > /app/start.sh && chmod +x /app/start.sh
 
 # Default command
 CMD ["/app/start.sh"]
+
+

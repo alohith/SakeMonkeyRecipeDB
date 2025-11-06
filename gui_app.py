@@ -39,6 +39,9 @@ class SakeRecipeGUI:
         
         self.setup_ui()
         self.load_ingredients()
+        self.load_recipes()
+        self.load_starter_data()
+        self.load_publish_data()
     
     def setup_ui(self):
         """Setup the main user interface"""
@@ -241,13 +244,14 @@ class SakeRecipeGUI:
         ttk.Button(button_frame, text="Add Recipe", command=self.add_recipe).pack(side='left', padx=5)
         ttk.Button(button_frame, text="Clear Form", command=self.clear_recipe_form).pack(side='left', padx=5)
         ttk.Button(button_frame, text="Load Ingredients", command=self.load_ingredients).pack(side='left', padx=5)
+        ttk.Button(button_frame, text="Refresh List", command=self.load_recipes).pack(side='left', padx=5)
         
         # Recipes list
         list_frame = ttk.LabelFrame(recipes_frame, text="Current Recipes", padding=10)
         list_frame.pack(fill='both', expand=True, padx=10, pady=5)
         
         # Treeview for recipes
-        columns = ('Batch ID', 'Batch', 'Style', 'Kake', 'Koji', 'Yeast', 'Water', 'Start Date')
+        columns = ('Batch ID', 'Batch', 'Style', 'Start Date', 'Pouch Date', 'ABV%', 'SMV', 'Status')
         self.recipes_tree = ttk.Treeview(list_frame, columns=columns, show='headings', height=8)
         
         for col in columns:
@@ -1025,22 +1029,38 @@ class SakeRecipeGUI:
         """Load recipes into tree"""
         cursor = self.conn.cursor()
         cursor.execute("""
-            SELECT batchID, batch, style, kake, koji, yeast, water_type, start_date
-            FROM recipe ORDER BY batchID
+            SELECT batchID, batch, style, start_date, pouch_date, abv, smv, 
+                   clarified, pasteurized, total_kake_g, total_koji_g
+            FROM recipe ORDER BY batchID DESC
         """)
         recipes = cursor.fetchall()
         
         self.recipes_tree.delete(*self.recipes_tree.get_children())
         for recipe in recipes:
+            # Determine status based on available data
+            status = "Planning"
+            if recipe['start_date']:
+                status = "Started"
+            if recipe['pouch_date']:
+                status = "Completed"
+            if recipe['clarified']:
+                status += " (Clarified)"
+            if recipe['pasteurized']:
+                status += " (Pasteurized)"
+            
+            # Format ABV and SMV
+            abv_text = f"{recipe['abv']:.1f}%" if recipe['abv'] else ""
+            smv_text = f"{recipe['smv']:.1f}" if recipe['smv'] else ""
+            
             self.recipes_tree.insert('', 'end', values=(
-                recipe['batchID'],
-                recipe['batch'],
-                recipe['style'],
-                recipe['kake'],
-                recipe['koji'],
-                recipe['yeast'],
-                recipe['water_type'],
-                recipe['start_date'] or ''
+                recipe['batchID'] or '',
+                recipe['batch'] or '',
+                recipe['style'] or '',
+                recipe['start_date'] or '',
+                recipe['pouch_date'] or '',
+                abv_text,
+                smv_text,
+                status
             ))
     
     def view_all_recipes(self):

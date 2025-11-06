@@ -85,3 +85,5 @@ The GUI should now launch and function correctly without any "No item with that 
 3. Verify live calculator works
 4. Test recipe and starter form submissions
 5. Confirm Google Sheets integration (if credentials are set up)
+
+
