@@ -49,6 +49,7 @@ Rice description of kake_rice used in the batch coming from the ingredient table
 Description tasting notes and brief sake recipe description.
 
 
-formulas page should be a live calculator based on entered values, for mocking up and determining any final additions to add. include:
-entry feilds for calibrated hydrometer temp (assume 20C), measured specific gravity, measured %Brix
+formulas page should be a couple of live calculators based on entered values, for mocking up and determining any final additions to add. include:
+entry fields for calibrated hydrometer temp (assume 20C or 15.6C), measured specific gravity, measured %Brix
 live calculate SMV and ABV% from corrected gravity and measured %brix values
+live calculate dilution or adjustments to bring the final corrected gravity, %Brix, SMV, and ABV% to a target profile. Target profiles include: Pure (11% brix, 1.005 SG) and Mixer (12% brix, 0.995 SG)

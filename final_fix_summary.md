@@ -87,3 +87,4 @@ The GUI should now launch and function correctly without any "No item with that 
 5. Confirm Google Sheets integration (if credentials are set up)
 
 
+
