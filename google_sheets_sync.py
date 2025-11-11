@@ -7,7 +7,7 @@ from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from sqlmodel import Session, select
-from models import Ingredient, Recipe, Starter, PublishNote
+from models import Ingredient, Recipe, Starter, PublishNote, StyleEnum, IngredientTypeEnum
 from database import get_session, init_database
 from datetime import datetime, date
 import os
@@ -211,6 +211,177 @@ def parse_bool(value):
         return value.lower() in ['true', 'yes', '1', 'x', 'checked']
     return bool(value)
 
+# ---- VALIDATION FUNCTIONS ---------------------------------------------------------
+
+def validate_style(style: Optional[str]) -> tuple:
+    """Validate style is one of the allowed categorical values"""
+    if style is None or style == "":
+        return True, None  # Optional field
+    style_lower = style.lower().strip()
+    valid_styles = [s.value for s in StyleEnum]
+    if style_lower in valid_styles:
+        return True, style_lower
+    return False, f"Invalid style '{style}'. Must be one of: {', '.join(valid_styles)}"
+
+def get_ingredient_type(session: Session, ingredient_id: Optional[int]) -> Optional[str]:
+    """Get the ingredient type for a given ingredient ID"""
+    if ingredient_id is None:
+        return None
+    ingredient = session.get(Ingredient, ingredient_id)
+    if ingredient:
+        return ingredient.ingredient_type
+    return None
+
+def validate_ingredient_exists(session: Session, ingredient_id: Optional[int], field_name: str) -> tuple:
+    """Validate that an ingredient ID exists in the database"""
+    if ingredient_id is None:
+        return True, None  # Optional field
+    ingredient = session.get(Ingredient, ingredient_id)
+    if ingredient is None:
+        return False, f"{field_name} references non-existent ingredient ID {ingredient_id}"
+    return True, None
+
+def validate_ingredient_type(session: Session, ingredient_id: Optional[int], field_name: str, 
+                            allowed_types: list) -> tuple:
+    """Validate that an ingredient ID exists and has one of the allowed types"""
+    if ingredient_id is None:
+        return True, None  # Optional field
+    
+    # First check if ingredient exists
+    exists, error = validate_ingredient_exists(session, ingredient_id, field_name)
+    if not exists:
+        return False, error
+    
+    # Check ingredient type
+    ingredient = session.get(Ingredient, ingredient_id)
+    if ingredient and ingredient.ingredient_type:
+        ingredient_type = ingredient.ingredient_type.lower().strip()
+        if ingredient_type in [t.lower() for t in allowed_types]:
+            return True, None
+        return False, f"{field_name} ingredient ID {ingredient_id} has type '{ingredient.ingredient_type}', but must be one of: {', '.join(allowed_types)}"
+    
+    return False, f"{field_name} ingredient ID {ingredient_id} has no type specified"
+
+def validate_starter_exists(session: Session, starter_batch: Optional[int], field_name: str) -> tuple:
+    """Validate that a starter batch ID exists in the database"""
+    if starter_batch is None:
+        return True, None  # Optional field
+    starter = session.get(Starter, starter_batch)
+    if starter is None:
+        return False, f"{field_name} references non-existent starter batch {starter_batch}"
+    return True, None
+
+def validate_recipe(session: Session, recipe: Recipe) -> list[str]:
+    """Validate a recipe against all business rules. Returns list of validation errors."""
+    errors = []
+    
+    # Validate style
+    is_valid, error = validate_style(recipe.style)
+    if not is_valid:
+        errors.append(error)
+    
+    # Validate kake is rice/kake_rice/koji_rice type
+    is_valid, error = validate_ingredient_type(
+        session, recipe.kake, "kake", 
+        [IngredientTypeEnum.RICE.value, IngredientTypeEnum.KAKI_RICE.value, IngredientTypeEnum.KOJI_RICE.value]
+    )
+    if not is_valid:
+        errors.append(error)
+    
+    # Validate koji is rice/kake_rice/koji_rice type
+    is_valid, error = validate_ingredient_type(
+        session, recipe.koji, "koji",
+        [IngredientTypeEnum.RICE.value, IngredientTypeEnum.KAKI_RICE.value, IngredientTypeEnum.KOJI_RICE.value]
+    )
+    if not is_valid:
+        errors.append(error)
+    
+    # Validate yeast is yeast type
+    is_valid, error = validate_ingredient_type(
+        session, recipe.yeast, "yeast",
+        [IngredientTypeEnum.YEAST.value]
+    )
+    if not is_valid:
+        errors.append(error)
+    
+    # Validate water_type is water type
+    is_valid, error = validate_ingredient_type(
+        session, recipe.water_type, "water_type",
+        [IngredientTypeEnum.WATER.value]
+    )
+    if not is_valid:
+        errors.append(error)
+    
+    # Validate starter exists
+    is_valid, error = validate_starter_exists(session, recipe.starter, "starter")
+    if not is_valid:
+        errors.append(error)
+    
+    return errors
+
+def validate_starter(session: Session, starter: Starter) -> list[str]:
+    """Validate a starter against all business rules. Returns list of validation errors."""
+    errors = []
+    
+    # Validate water_type is water type
+    is_valid, error = validate_ingredient_type(
+        session, starter.water_type, "water_type",
+        [IngredientTypeEnum.WATER.value]
+    )
+    if not is_valid:
+        errors.append(error)
+    
+    # Validate Kake is rice/kake_rice/koji_rice type
+    is_valid, error = validate_ingredient_type(
+        session, starter.Kake, "Kake",
+        [IngredientTypeEnum.RICE.value, IngredientTypeEnum.KAKI_RICE.value, IngredientTypeEnum.KOJI_RICE.value]
+    )
+    if not is_valid:
+        errors.append(error)
+    
+    # Validate Koji is rice/kake_rice/koji_rice type
+    is_valid, error = validate_ingredient_type(
+        session, starter.Koji, "Koji",
+        [IngredientTypeEnum.RICE.value, IngredientTypeEnum.KAKI_RICE.value, IngredientTypeEnum.KOJI_RICE.value]
+    )
+    if not is_valid:
+        errors.append(error)
+    
+    # Validate yeast is yeast type
+    is_valid, error = validate_ingredient_type(
+        session, starter.yeast, "yeast",
+        [IngredientTypeEnum.YEAST.value]
+    )
+    if not is_valid:
+        errors.append(error)
+    
+    return errors
+
+def validate_publish_note(session: Session, publish_note: PublishNote) -> list[str]:
+    """Validate a publish note against all business rules. Returns list of validation errors."""
+    errors = []
+    
+    # Validate style
+    is_valid, error = validate_style(publish_note.Style)
+    if not is_valid:
+        errors.append(error)
+    
+    # Validate Water is water type
+    is_valid, error = validate_ingredient_type(
+        session, publish_note.Water, "Water",
+        [IngredientTypeEnum.WATER.value]
+    )
+    if not is_valid:
+        errors.append(error)
+    
+    # Validate BatchID references an existing recipe
+    if publish_note.BatchID:
+        recipe = session.get(Recipe, publish_note.BatchID)
+        if recipe is None:
+            errors.append(f"BatchID '{publish_note.BatchID}' does not reference an existing recipe")
+    
+    return errors
+
 # ---- SYNC FUNCTIONS (unchanged) ---------------------------------------------------
 # ---- SYNC (Sheets -> DB) ----------------------------------------------------------
 
@@ -243,6 +414,8 @@ def sync_starters_from_sheet(service, spreadsheet_id: str, session: Session):
     """Sync starters from Google Sheet"""
     try:
         records = get_sheet_data(service, spreadsheet_id, "Starters")
+        validation_errors = []
+        synced_count = 0
         for record in records:
             starter = Starter(
                 StarterBatch=parse_int(record.get('StarterBatch')),
@@ -260,6 +433,12 @@ def sync_starters_from_sheet(service, spreadsheet_id: str, session: Session):
                 KCl=parse_float(record.get('KCl')),
                 temp_C=parse_float(record.get('temp_C'))
             )
+            # Validate before saving
+            errors = validate_starter(session, starter)
+            if errors:
+                validation_errors.append(f"StarterBatch {starter.StarterBatch}: {'; '.join(errors)}")
+                continue  # Skip invalid records
+            
             existing = session.get(Starter, starter.StarterBatch)
             if existing:
                 for key, value in starter.dict(exclude={'StarterBatch'}).items():
@@ -267,8 +446,15 @@ def sync_starters_from_sheet(service, spreadsheet_id: str, session: Session):
                         setattr(existing, key, value)
             else:
                 session.add(starter)
+            synced_count += 1
         session.commit()
-        print(f"Synced {len(records)} starters")
+        print(f"Synced {synced_count}/{len(records)} starters")
+        if validation_errors:
+            print(f"WARNING: {len(validation_errors)} starter records failed validation:")
+            for error in validation_errors[:10]:  # Show first 10 errors
+                print(f"  - {error}")
+            if len(validation_errors) > 10:
+                print(f"  ... and {len(validation_errors) - 10} more errors")
     except Exception as e:
         print(f"Error syncing starters: {e}")
         session.rollback()
@@ -277,6 +463,8 @@ def sync_recipes_from_sheet(service, spreadsheet_id: str, session: Session):
     """Sync recipes from Google Sheet"""
     try:
         records = get_sheet_data(service, spreadsheet_id, "Recipe")
+        validation_errors = []
+        synced_count = 0
         for record in records:
             recipe = Recipe(
                 batchID=record.get('batchID'),
@@ -310,6 +498,17 @@ def sync_recipes_from_sheet(service, spreadsheet_id: str, session: Session):
                 pasteurization_notes=record.get('pasteurization_notes'),
                 finishing_additions=record.get('finishing_additions')
             )
+            # Validate before saving
+            errors = validate_recipe(session, recipe)
+            if errors:
+                validation_errors.append(f"batchID {recipe.batchID}: {'; '.join(errors)}")
+                continue  # Skip invalid records
+            
+            # Normalize style if valid
+            is_valid, normalized_style = validate_style(recipe.style)
+            if is_valid and normalized_style:
+                recipe.style = normalized_style
+            
             existing = session.get(Recipe, recipe.batchID)
             if existing:
                 for key, value in recipe.dict(exclude={'batchID'}).items():
@@ -317,8 +516,15 @@ def sync_recipes_from_sheet(service, spreadsheet_id: str, session: Session):
                         setattr(existing, key, value)
             else:
                 session.add(recipe)
+            synced_count += 1
         session.commit()
-        print(f"Synced {len(records)} recipes")
+        print(f"Synced {synced_count}/{len(records)} recipes")
+        if validation_errors:
+            print(f"WARNING: {len(validation_errors)} recipe records failed validation:")
+            for error in validation_errors[:10]:  # Show first 10 errors
+                print(f"  - {error}")
+            if len(validation_errors) > 10:
+                print(f"  ... and {len(validation_errors) - 10} more errors")
     except Exception as e:
         print(f"Error syncing recipes: {e}")
         session.rollback()
@@ -327,6 +533,8 @@ def sync_publishnotes_from_sheet(service, spreadsheet_id: str, session: Session)
     """Sync publish notes from Google Sheet"""
     try:
         records = get_sheet_data(service, spreadsheet_id, "PublishNotes")
+        validation_errors = []
+        synced_count = 0
         for record in records:
             publish_note = PublishNote(
                 BatchID=record.get('BatchID'),
@@ -339,6 +547,17 @@ def sync_publishnotes_from_sheet(service, spreadsheet_id: str, session: Session)
                 Rice=record.get('Rice'),
                 Description=record.get('Description')
             )
+            # Validate before saving
+            errors = validate_publish_note(session, publish_note)
+            if errors:
+                validation_errors.append(f"BatchID {publish_note.BatchID}: {'; '.join(errors)}")
+                continue  # Skip invalid records
+            
+            # Normalize style if valid
+            is_valid, normalized_style = validate_style(publish_note.Style)
+            if is_valid and normalized_style:
+                publish_note.Style = normalized_style
+            
             existing = session.get(PublishNote, publish_note.BatchID)
             if existing:
                 for key, value in publish_note.dict(exclude={'BatchID'}).items():
@@ -346,8 +565,15 @@ def sync_publishnotes_from_sheet(service, spreadsheet_id: str, session: Session)
                         setattr(existing, key, value)
             else:
                 session.add(publish_note)
+            synced_count += 1
         session.commit()
-        print(f"Synced {len(records)} publish notes")
+        print(f"Synced {synced_count}/{len(records)} publish notes")
+        if validation_errors:
+            print(f"WARNING: {len(validation_errors)} publish note records failed validation:")
+            for error in validation_errors[:10]:  # Show first 10 errors
+                print(f"  - {error}")
+            if len(validation_errors) > 10:
+                print(f"  ... and {len(validation_errors) - 10} more errors")
     except Exception as e:
         print(f"Error syncing publish notes: {e}")
         session.rollback()
