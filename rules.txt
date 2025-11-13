@@ -7,7 +7,7 @@ style is a categorical limited to the few types you have seen (pure,rustic,rusti
 kake must be a ingrdientID with a rice type or the designated kake_rice or koji_rice from the ingredient table
 koji must be a ingrdientID with a rice type or the designated kake_rice or koji_rice from the ingredient table
 yeast must be ingredientID with a yeast type from the ingredient table
-starter must refer to a StarterBatch from the starters table
+starter must refer to a StarterBatch from the starters table (if one doesn't exist create one using standard 'Shubo' recipe from ingredient table, and associate the StarterBatch id following the starter batch naming scheme of 's##')
 water_type is a categorical ingredientID from the ingredient table of the category water (spring, well, distilled)
 total_kake_g running total of kake rice added to the batch across all the additions including the amount the batch was started with
 total_koji_g running total of koji rice added to the batch across all the additions including the amount the batch was started with
@@ -31,10 +31,28 @@ pasteruization_notes if pasteurized process taken, what notes if any are there?
 finishing_additions what final addtion notes are there?
 
 
-Ingredients table: ID indicates in-database reference for that ingredient type indicates what type of ingredient (category rice can be used for making koji or kake), acc_date indicate accession date into the database as a defined ingredient
+Ingredients table:
+ingredientID indicates in-database reference for that ingredient
+ingredient_type indicates what type of ingredient (category rice can be used for making koji or kake)
+acc_date indicate accession date into the database as a defined ingredient
+source is where the ingredient was acquired
+description is extended description for the ingredient
 
 
-Starters table: Date is the date the starter was created (should be a DATE type); StarterBatch is a in-database ID to be used when noting starting conditons of a batch; BatchID is the unifying ID for a batch across tables and the batch that this starter entry is going into; Amt_Kake is how much kake rice was added into the starter in grams and should contribute to the total_kake_g column in the recipe table; Amt_Koji is how much koji rice was added into the starter in grams and should contribute to the total_koji_g column in the recipe table; Amt_water is how much liquid was added to the starter in ml; water_type is a categorical ingredientID from the ingredient table of the category water (spring, well, distilled); Kake is ingredientID for a rice or kake_rice type from the ingredient table; Koji is ingredientID for a rice or koji_rice type from the ingredient table; yeast is ingredientID for a yeast type from the ingredient table;lactic_acid should be grames of lactic acid solution added;MgSO4 should be grams of MgSO4 added;KCl should be grams of KCL added; temp_C is a temperature in C at which the starter began it's ferment
+Starters table: Default entry fill to 'Shubo' from ingredient table which is "100ml of top crop liquid from previous batch Moromi; 250g Koji; 250ml H20; Run for 3 days at 6C before using in Moromi"
+Date is the date the starter was created (should be a DATE type)
+StarterBatch is a in-database ID (using notation s##) to be used when noting starting conditons of a batch
+BatchID is the unifying ID for a batch across tables and the batch that this starter entry is going into
+Amt_Kake is how much kake rice was added into the starter in grams and should contribute to the total_kake_g column in the recipe table
+Amt_Koji is how much koji rice was added into the starter in grams and should contribute to the total_koji_g column in the recipe table
+Amt_water is how much liquid was added to the starter in ml; water_type is a categorical ingredientID from the ingredient table of the category water (spring, well, distilled)
+Kake is ingredientID for a rice or kake_rice type from the ingredient table
+Koji is ingredientID for a rice or koji_rice type from the ingredient table
+yeast is ingredientID for a yeast type from the ingredient table
+lactic_acid should be grams of lactic acid solution added
+MgSO4 should be grams of MgSO4 added
+KCl should be grams of KCL added
+temp_C is a temperature in C at which the starter began it's ferment
 
 
 PublishNotes Table: pared down version of details from the recipe table, using good puncutation and grammar for public view
@@ -49,7 +67,12 @@ Rice description of kake_rice used in the batch coming from the ingredient table
 Description tasting notes and brief sake recipe description.
 
 
-formulas page should be a couple of live calculators based on entered values, for mocking up and determining any final additions to add. include:
+formulas page should be a couple of independent live calculators based on entered values, for mocking up and determining any final additions to add. include:
 entry fields for calibrated hydrometer temp (assume 20C or 15.6C), measured specific gravity, measured %Brix
 live calculate SMV and ABV% from corrected gravity and measured %brix values
-live calculate dilution or adjustments to bring the final corrected gravity, %Brix, SMV, and ABV% to a target profile. Target profiles include: Pure (11% brix, 1.005 SG) and Mixer (12% brix, 0.995 SG)
+live calculate dilution or adjustments (using 35% Brix amazake ingredientID) to bring the final corrected gravity, %Brix, SMV, and ABV% to a target profile. Target profiles include: Pure (11% brix, 1.005 SG) and Mixer (12% brix, 0.995 SG)
+
+Database View page:
+a scrollable preview of the database entries for review
+
+Google sheet sync page: option to initate sync with assoicated google sheet backup

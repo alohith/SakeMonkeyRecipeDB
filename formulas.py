@@ -2,7 +2,7 @@
 Formula calculations for sake brewing
 Based on rules.txt specifications
 """
-from typing import Optional
+from typing import Optional, Tuple
 
 
 def calculate_final_gravity(
@@ -87,42 +87,71 @@ def calculate_dilution_adjustment(
     current_gravity: float,
     target_brix: float,
     target_gravity: float,
-    current_volume_L: float
+    current_volume_L: float,
+    fortifier_brix: float = 35.0,
+    fortifier_gravity: Optional[float] = None,
 ) -> dict:
     """
-    Calculate dilution needed to reach target profile
-    Returns dict with:
-    - water_to_add_L: volume of water to add
-    - final_volume_L: final volume after dilution
-    - final_brix: estimated final brix
-    - final_gravity: estimated final gravity
+    Calculate dilution/addition guidance matching rules.txt.
+
+    If the target brix is higher than the current brix we assume amazake
+    (default 35°Bx) is added; otherwise we fall back to water dilution.
     """
-    # This is a simplified calculation
-    # More complex calculations would be needed for precise adjustments
-    
-    # Estimate water needed (simplified linear approximation)
-    brix_diff = current_brix - target_brix
-    gravity_diff = current_gravity - target_gravity
-    
-    # Rough estimate - would need more sophisticated formula
-    if brix_diff > 0:
-        # Need to dilute
-        dilution_factor = target_brix / current_brix if current_brix > 0 else 1
-        water_to_add_L = current_volume_L * (1 / dilution_factor - 1)
+
+    def _water_addition() -> Tuple[float, float, float]:
+        if current_brix <= 0:
+            return 0.0, current_brix, current_gravity
+        dilution_factor = target_brix / current_brix
+        water_to_add = current_volume_L * (1 / dilution_factor - 1)
+        if water_to_add < 0:
+            water_to_add = 0.0
+        final_volume = current_volume_L + water_to_add
+        if final_volume <= 0:
+            return water_to_add, current_brix, current_gravity
+        final_brix = (current_brix * current_volume_L) / final_volume
+        final_gravity = (current_gravity * current_volume_L) / final_volume
+        return water_to_add, final_brix, final_gravity
+
+    def _amazake_addition() -> Tuple[float, float, float]:
+        additive_gravity = (
+            fortifier_gravity
+            if fortifier_gravity
+            else 1 + (fortifier_brix / (258.6 - ((fortifier_brix / 258.2) * 227.1)))
+        )
+        numerator = current_volume_L * (target_brix - current_brix)
+        denominator = fortifier_brix - target_brix
+        if denominator <= 0:
+            return _water_addition()
+        addition_volume = max(numerator / denominator, 0.0)
+        final_volume = current_volume_L + addition_volume
+        if final_volume <= 0:
+            return addition_volume, current_brix, current_gravity
+        final_brix = (
+            (current_brix * current_volume_L + fortifier_brix * addition_volume) / final_volume
+        )
+        final_gravity = (
+            (current_gravity * current_volume_L + additive_gravity * addition_volume) / final_volume
+        )
+        return addition_volume, final_brix, final_gravity
+
+    use_amazake = target_brix >= current_brix
+    if use_amazake:
+        addition_volume, final_brix, final_gravity = _amazake_addition()
+        addition_label = "amazake"
     else:
-        water_to_add_L = 0
-    
-    final_volume_L = current_volume_L + water_to_add_L
-    final_brix = (current_brix * current_volume_L) / final_volume_L if final_volume_L > 0 else current_brix
-    final_gravity = (current_gravity * current_volume_L) / final_volume_L if final_volume_L > 0 else current_gravity
-    
+        addition_volume, final_brix, final_gravity = _water_addition()
+        addition_label = "water"
+
+    final_volume_L = current_volume_L + addition_volume
+
+    rounded_addition = round(addition_volume, 2)
     return {
-        'water_to_add_L': round(water_to_add_L, 2),
+        'addition_type': addition_label,
+        'volume_to_add_L': rounded_addition,
+        'water_to_add_L': rounded_addition,
         'final_volume_L': round(final_volume_L, 2),
         'final_brix': round(final_brix, 2),
-        'final_gravity': round(final_gravity, 4)
+        'final_gravity': round(final_gravity, 4),
+        'target_brix': target_brix,
+        'target_gravity': target_gravity,
     }
-
-
-
-

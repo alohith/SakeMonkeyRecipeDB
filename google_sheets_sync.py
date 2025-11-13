@@ -2,7 +2,7 @@
 Google Sheets synchronization functionality
 Syncs data from master Google Sheet to local SQLite database
 """
-from typing import Optional  # <-- add this
+from typing import Optional, Any  # <-- add this
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -66,7 +66,7 @@ def verify_spreadsheet_access(spreadsheet_id: str, creds_path: Optional[str] = N
             spreadsheetId=spreadsheet_id, includeGridData=False
         ).execute()
         spreadsheet_title = spreadsheet.get("properties", {}).get("title", "Unknown")
-        print(f"✓ Access verified. Spreadsheet: '{spreadsheet_title}'")
+        print(f"[OK] Access verified. Spreadsheet: '{spreadsheet_title}'")
         return True
     except HttpError as error:
         sa_email = get_service_account_email(creds_path)
@@ -223,27 +223,52 @@ def validate_style(style: Optional[str]) -> tuple:
         return True, style_lower
     return False, f"Invalid style '{style}'. Must be one of: {', '.join(valid_styles)}"
 
-def get_ingredient_type(session: Session, ingredient_id: Optional[int]) -> Optional[str]:
-    """Get the ingredient type for a given ingredient ID"""
+def convert_ingredient_id_to_string(session: Session, ingredient_id: Optional[Any]) -> Optional[str]:
+    """Convert a numeric ingredient ID to ingredientID string, or return as-is if already a string"""
     if ingredient_id is None:
         return None
-    ingredient = session.get(Ingredient, ingredient_id)
-    if ingredient:
-        return ingredient.ingredient_type
+    # If it's already a string, return it
+    if isinstance(ingredient_id, str):
+        return ingredient_id
+    # If it's numeric, try to find the ingredient by looking up all ingredients
+    # and finding one that matches (this is a fallback - ideally the sheet should have ingredientID strings)
+    try:
+        numeric_id = int(float(ingredient_id))
+        # Try to find ingredient by checking if any ingredientID contains this number
+        # This is a workaround - ideally the sheet should store ingredientID strings directly
+        statement = select(Ingredient)
+        all_ingredients = session.exec(statement).all()
+        for ing in all_ingredients:
+            if ing.ingredientID and str(numeric_id) in str(ing.ingredientID):
+                return ing.ingredientID
+        # If not found, return the numeric ID as string (this might fail validation)
+        return str(numeric_id)
+    except (ValueError, TypeError):
+        return str(ingredient_id)
+
+def get_ingredient_type(session: Session, ingredient_id: Optional[Any]) -> Optional[str]:
+    """Get the ingredient type for a given ingredient ID (now uses ingredientID string)"""
+    if ingredient_id is None:
+        return None
+    ingredient_id_str = convert_ingredient_id_to_string(session, ingredient_id)
+    if ingredient_id_str:
+        ingredient = session.get(Ingredient, ingredient_id_str)
+        if ingredient:
+            return ingredient.ingredient_type
     return None
 
-def validate_ingredient_exists(session: Session, ingredient_id: Optional[int], field_name: str) -> tuple:
-    """Validate that an ingredient ID exists in the database"""
+def validate_ingredient_exists(session: Session, ingredient_id: Optional[Any], field_name: str) -> tuple:
+    """Validate that an ingredient ID exists in the database (uses ingredientID string)"""
     if ingredient_id is None:
         return True, None  # Optional field
-    ingredient = session.get(Ingredient, ingredient_id)
+    ingredient = session.get(Ingredient, str(ingredient_id))
     if ingredient is None:
-        return False, f"{field_name} references non-existent ingredient ID {ingredient_id}"
+        return False, f"{field_name} references non-existent ingredientID {ingredient_id}"
     return True, None
 
-def validate_ingredient_type(session: Session, ingredient_id: Optional[int], field_name: str, 
+def validate_ingredient_type(session: Session, ingredient_id: Optional[Any], field_name: str, 
                             allowed_types: list) -> tuple:
-    """Validate that an ingredient ID exists and has one of the allowed types"""
+    """Validate that an ingredient ID exists and has one of the allowed types (uses ingredientID string)"""
     if ingredient_id is None:
         return True, None  # Optional field
     
@@ -253,22 +278,22 @@ def validate_ingredient_type(session: Session, ingredient_id: Optional[int], fie
         return False, error
     
     # Check ingredient type
-    ingredient = session.get(Ingredient, ingredient_id)
+    ingredient = session.get(Ingredient, str(ingredient_id))
     if ingredient and ingredient.ingredient_type:
         ingredient_type = ingredient.ingredient_type.lower().strip()
         if ingredient_type in [t.lower() for t in allowed_types]:
             return True, None
-        return False, f"{field_name} ingredient ID {ingredient_id} has type '{ingredient.ingredient_type}', but must be one of: {', '.join(allowed_types)}"
+        return False, f"{field_name} ingredientID {ingredient_id} has type '{ingredient.ingredient_type}', but must be one of: {', '.join(allowed_types)}"
     
-    return False, f"{field_name} ingredient ID {ingredient_id} has no type specified"
+    return False, f"{field_name} ingredientID {ingredient_id} has no type specified"
 
-def validate_starter_exists(session: Session, starter_batch: Optional[int], field_name: str) -> tuple:
-    """Validate that a starter batch ID exists in the database"""
+def validate_starter_exists(session: Session, starter_batch: Optional[Any], field_name: str) -> tuple:
+    """Validate that a starter batch ID exists in the database (uses StarterBatch string)"""
     if starter_batch is None:
         return True, None  # Optional field
-    starter = session.get(Starter, starter_batch)
+    starter = session.get(Starter, str(starter_batch))
     if starter is None:
-        return False, f"{field_name} references non-existent starter batch {starter_batch}"
+        return False, f"{field_name} references non-existent StarterBatchID {starter_batch}"
     return True, None
 
 def validate_recipe(session: Session, recipe: Recipe) -> list[str]:
@@ -390,16 +415,26 @@ def sync_ingredients_from_sheet(service, spreadsheet_id: str, session: Session):
     try:
         records = get_sheet_data(service, spreadsheet_id, "Ingredients")
         for record in records:
+            # Get IngredientID from Google Sheet (primary key - string like "Prop_sake9")
+            ingredient_id_name = record.get('IngredientID') or record.get('ingredientID') or record.get('ID')
+            
+            if not ingredient_id_name:
+                print(f"Warning: Skipping ingredient record with no IngredientID: {record}")
+                continue
+            
+            # Convert to string and strip whitespace
+            ingredient_id_str = str(ingredient_id_name).strip()
+            
             ingredient = Ingredient(
-                ID=parse_int(record.get('ID')) or parse_int(record.get('ingredientID')),
+                ingredientID=ingredient_id_str,  # Primary key
                 ingredient_type=record.get('ingredient_type') or record.get('type', ''),
                 acc_date=parse_date(record.get('acc_date')),
                 source=record.get('source'),
                 description=record.get('description')
             )
-            existing = session.get(Ingredient, ingredient.ID)
+            existing = session.get(Ingredient, ingredient.ingredientID)
             if existing:
-                for key, value in ingredient.dict(exclude={'ID'}).items():
+                for key, value in ingredient.dict(exclude={'ingredientID'}).items():
                     if value is not None:
                         setattr(existing, key, value)
             else:
@@ -417,17 +452,44 @@ def sync_starters_from_sheet(service, spreadsheet_id: str, session: Session):
         validation_errors = []
         synced_count = 0
         for record in records:
+            # StarterBatch is now a string (e.g., "s64", "s100")
+            starter_batch_raw = record.get('StarterBatch') or record.get('StarterBatchID')
+            if not starter_batch_raw:
+                print(f"Warning: Skipping starter record with no StarterBatch: {record}")
+                continue
+            
+            # Format as "s##" if it's a number, or normalize case if already formatted
+            starter_batch_str = str(starter_batch_raw).strip()
+            if not starter_batch_str.lower().startswith('s'):
+                # It's a number, format as "s##"
+                try:
+                    batch_num = int(float(starter_batch_str))
+                    starter_batch_str = f"s{batch_num}"
+                except (ValueError, TypeError):
+                    # If conversion fails, add 's' prefix
+                    starter_batch_str = f"s{starter_batch_str}"
+            else:
+                # Already has 's' prefix, normalize to lowercase for consistency
+                starter_batch_str = starter_batch_str.lower()
+            
+            # Convert ingredient foreign keys from numeric IDs to ingredientID strings if needed
+            # The Google Sheet may have numeric IDs, but we need ingredientID strings
+            water_type_id = convert_ingredient_id_to_string(session, parse_int(record.get('water_type')))
+            kake_id = convert_ingredient_id_to_string(session, parse_int(record.get('Kake')))
+            koji_id = convert_ingredient_id_to_string(session, parse_int(record.get('Koji')))
+            yeast_id = convert_ingredient_id_to_string(session, parse_int(record.get('yeast')))
+            
             starter = Starter(
-                StarterBatch=parse_int(record.get('StarterBatch')),
+                StarterBatch=starter_batch_str,  # Primary key - string like "s64", "s100"
                 Date=parse_date(record.get('Date')),
                 BatchID=record.get('BatchID'),
                 Amt_Kake=parse_float(record.get('Amt_Kake')),
                 Amt_Koji=parse_float(record.get('Amt_Koji')),
                 Amt_water=parse_float(record.get('Amt_water')),
-                water_type=parse_int(record.get('water_type')),
-                Kake=parse_int(record.get('Kake')),
-                Koji=parse_int(record.get('Koji')),
-                yeast=parse_int(record.get('yeast')),
+                water_type=water_type_id,  # Now a string ingredientID
+                Kake=kake_id,  # Now a string ingredientID
+                Koji=koji_id,  # Now a string ingredientID
+                yeast=yeast_id,  # Now a string ingredientID
                 lactic_acid=parse_float(record.get('lactic_acid')),
                 MgSO4=parse_float(record.get('MgSO4')),
                 KCl=parse_float(record.get('KCl')),
@@ -466,17 +528,39 @@ def sync_recipes_from_sheet(service, spreadsheet_id: str, session: Session):
         validation_errors = []
         synced_count = 0
         for record in records:
+            # Convert ingredient foreign keys from numeric IDs to ingredientID strings if needed
+            kake_id = convert_ingredient_id_to_string(session, parse_int(record.get('kake')))
+            koji_id = convert_ingredient_id_to_string(session, parse_int(record.get('koji')))
+            yeast_id = convert_ingredient_id_to_string(session, parse_int(record.get('yeast')))
+            water_type_id = convert_ingredient_id_to_string(session, parse_int(record.get('water_type')))
+            
+            # Convert starter foreign key from numeric ID to StarterBatch string if needed
+            starter_batch_raw = record.get('starter')
+            starter_batch_id = None
+            if starter_batch_raw:
+                starter_batch_str = str(starter_batch_raw).strip()
+                if not starter_batch_str.lower().startswith('s'):
+                    try:
+                        batch_num = int(float(starter_batch_str))
+                        starter_batch_str = f"s{batch_num}"
+                    except (ValueError, TypeError):
+                        starter_batch_str = f"s{starter_batch_str}"
+                else:
+                    # Normalize to lowercase for consistency
+                    starter_batch_str = starter_batch_str.lower()
+                starter_batch_id = starter_batch_str
+            
             recipe = Recipe(
                 batchID=record.get('batchID'),
                 start_date=parse_date(record.get('start_date')),
                 pouch_date=parse_date(record.get('pouch_date')),
                 batch=parse_int(record.get('batch')),
                 style=record.get('style'),
-                kake=parse_int(record.get('kake')),
-                koji=parse_int(record.get('koji')),
-                yeast=parse_int(record.get('yeast')),
-                starter=parse_int(record.get('starter')),
-                water_type=parse_int(record.get('water_type')),
+                kake=kake_id,  # Now a string ingredientID
+                koji=koji_id,  # Now a string ingredientID
+                yeast=yeast_id,  # Now a string ingredientID
+                starter=starter_batch_id,  # Now a string StarterBatch
+                water_type=water_type_id,  # Now a string ingredientID
                 total_kake_g=parse_float(record.get('total_kake_g')),
                 total_koji_g=parse_float(record.get('total_koji_g')),
                 total_water_mL=parse_float(record.get('total_water_mL')),
@@ -589,20 +673,21 @@ def sync_ingredients_to_sheet(service, spreadsheet_id: str, session: Session):
         
         # Get existing sheet data
         sheet_records = get_sheet_data(service, spreadsheet_id, "Ingredients")
-        existing_ids = {parse_int(r.get('ID')) or parse_int(r.get('ingredientID')) for r in sheet_records if r.get('ID') or r.get('ingredientID')}
+        existing_ids = {str(r.get('IngredientID') or r.get('ingredientID') or r.get('ID', '')).strip() 
+                       for r in sheet_records if r.get('IngredientID') or r.get('ingredientID') or r.get('ID')}
         
         # Find new ingredients (in DB but not in sheet)
-        new_ingredients = [ing for ing in db_ingredients if ing.ID and ing.ID not in existing_ids]
+        new_ingredients = [ing for ing in db_ingredients if ing.ingredientID and str(ing.ingredientID) not in existing_ids]
         
         if new_ingredients:
-            # Prepare headers based on model fields
-            headers = ['ID', 'ingredient_type', 'acc_date', 'source', 'description']
+            # Prepare headers based on model fields (include IngredientID from Google Sheet)
+            headers = ['IngredientID', 'ingredient_type', 'acc_date', 'source', 'description']
             
             # Convert new ingredients to dict format
             new_rows = []
             for ing in new_ingredients:
                 row = {
-                    'ID': ing.ID,
+                    'IngredientID': ing.ingredientID,  # Primary key
                     'ingredient_type': ing.ingredient_type or '',
                     'acc_date': format_value_for_sheet(ing.acc_date),
                     'source': ing.source or '',
@@ -642,10 +727,11 @@ def sync_starters_to_sheet(service, spreadsheet_id: str, session: Session):
         
         # Get existing sheet data
         sheet_records = get_sheet_data(service, spreadsheet_id, "Starters")
-        existing_batches = {parse_int(r.get('StarterBatch')) for r in sheet_records if r.get('StarterBatch')}
+        existing_batches = {str(r.get('StarterBatch') or r.get('StarterBatchID', '')).strip() 
+                           for r in sheet_records if r.get('StarterBatch') or r.get('StarterBatchID')}
         
         # Find new starters (in DB but not in sheet)
-        new_starters = [st for st in db_starters if st.StarterBatch and st.StarterBatch not in existing_batches]
+        new_starters = [st for st in db_starters if st.StarterBatch and str(st.StarterBatch) not in existing_batches]
         
         if new_starters:
             # Prepare headers based on model fields

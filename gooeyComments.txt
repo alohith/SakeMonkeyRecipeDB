@@ -1,0 +1,21 @@
+Formaulas page:
+ -separate pages for each formula calculation
+ -live update on Corrected Gravity, ABV% and SMV
+ -Target profiles adjustment should pull ferment finish gravity and brix values from the recipe table
+
+throughout the app:
+ -use ingredientID nomenclature from the ingredientID column in the ingredients table when referencing ingredient
+ -use StarterBatchID nomenclature from the StarterBatch column in the starters table when referencing starter batchess
+ -use BatchID nomenclature from the batchID column in the recipe table when referencing batches
+
+View Database page:
+a scrollable table preivew of the database entries for review, ordered by BatchID, pop out the table view in a new window
+
+add-recipe page:
+ -dropdown selection for kake, yeast and koji ingredients are not being populated from the ingredients table. when creating a new recipe, the kake, yeast and koji dropdowns should default to the first available ingredient among the rice/kake_rice/koji_rice types in the ingredients table
+ -parse batch number from batchID if not provided
+ -create option to create new style to add to the database
+ -starterbatch dropdown selection is not pulling StarterBatchID codes from the StarterBatch column from the starters table
+ -when creating a new recipe, the starterbatch dropdown should default to the 'Shubo' starter batch which is 250g Koji, 250ml Water, .4g Lactic Acid at 6C
+ -when creating a new recipe, the water_type dropdown should default to the first available water type among the water/spring/well/distilled types in the ingredients table
+ -when creating a new recipe, the ferment_temp_C field should default to 6C

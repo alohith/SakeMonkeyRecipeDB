@@ -28,7 +28,8 @@ class Ingredient(SQLModel, table=True):
     """Ingredients table"""
     __tablename__ = "ingredients"
     
-    ID: Optional[int] = Field(default=None, primary_key=True)
+    #ID: Optional[int] = Field(default=None, primary_key=True)
+    ingredientID: Optional[str] = Field(default=None, sa_column=Column("ingredientID", String, primary_key=True))  # IngredientID name from Google Sheet
     ingredient_type: str = Field(sa_column=Column(String))
     acc_date: Optional[date] = Field(default=None, sa_column=Column(Date))
     source: Optional[str] = Field(default=None)
@@ -39,16 +40,17 @@ class Starter(SQLModel, table=True):
     """Starters table"""
     __tablename__ = "starters"
     
-    StarterBatch: Optional[int] = Field(default=None, primary_key=True)
+    #StarterBatch: Optional[int] = Field(default=None, primary_key=True)
+    StarterBatch: Optional[str] = Field(default=None, sa_column=Column("StarterBatch", String, primary_key=True))  # StarterBatchID name from Google Sheet
     Date: Optional[date] = Field(default=None, sa_column=Column(Date))
     BatchID: Optional[str] = Field(default=None, index=True)
     Amt_Kake: Optional[float] = Field(default=None)  # grams
     Amt_Koji: Optional[float] = Field(default=None)  # grams
     Amt_water: Optional[float] = Field(default=None)  # ml
-    water_type: Optional[int] = Field(default=None, foreign_key="ingredients.ID")
-    Kake: Optional[int] = Field(default=None, foreign_key="ingredients.ID")
-    Koji: Optional[int] = Field(default=None, foreign_key="ingredients.ID")
-    yeast: Optional[int] = Field(default=None, foreign_key="ingredients.ID")
+    water_type: Optional[str] = Field(default=None, foreign_key="ingredients.ingredientID")
+    Kake: Optional[str] = Field(default=None, foreign_key="ingredients.ingredientID")
+    Koji: Optional[str] = Field(default=None, foreign_key="ingredients.ingredientID")
+    yeast: Optional[str] = Field(default=None, foreign_key="ingredients.ingredientID")
     lactic_acid: Optional[float] = Field(default=None)  # grams
     MgSO4: Optional[float] = Field(default=None)  # grams
     KCl: Optional[float] = Field(default=None)  # grams
@@ -64,11 +66,11 @@ class Recipe(SQLModel, table=True):
     pouch_date: Optional[date] = Field(default=None, sa_column=Column(Date))
     batch: Optional[int] = Field(default=None)  # increment on batch made
     style: Optional[str] = Field(default=None)  # pure, rustic, rustic_experimental
-    kake: Optional[int] = Field(default=None, foreign_key="ingredients.ID")
-    koji: Optional[int] = Field(default=None, foreign_key="ingredients.ID")
-    yeast: Optional[int] = Field(default=None, foreign_key="ingredients.ID")
-    starter: Optional[int] = Field(default=None, foreign_key="starters.StarterBatch")
-    water_type: Optional[int] = Field(default=None, foreign_key="ingredients.ID")
+    kake: Optional[str] = Field(default=None, foreign_key="ingredients.ingredientID")
+    koji: Optional[str] = Field(default=None, foreign_key="ingredients.ingredientID")
+    yeast: Optional[str] = Field(default=None, foreign_key="ingredients.ingredientID")
+    starter: Optional[str] = Field(default=None, foreign_key="starters.StarterBatch")
+    water_type: Optional[str] = Field(default=None, foreign_key="ingredients.ingredientID")
     total_kake_g: Optional[float] = Field(default=None)  # running total in grams
     total_koji_g: Optional[float] = Field(default=None)  # running total in grams
     total_water_mL: Optional[float] = Field(default=None)  # running total in ml
@@ -98,7 +100,7 @@ class PublishNote(SQLModel, table=True):
     BatchID: str = Field(default=None, primary_key=True, foreign_key="recipe.batchID")
     Pouch_Date: Optional[date] = Field(default=None, sa_column=Column(Date))
     Style: Optional[str] = Field(default=None)
-    Water: Optional[int] = Field(default=None, foreign_key="ingredients.ID")
+    Water: Optional[str] = Field(default=None, foreign_key="ingredients.ingredientID")
     ABV: Optional[float] = Field(default=None)
     SMV: Optional[float] = Field(default=None)
     Batch_Size_L: Optional[float] = Field(default=None)
