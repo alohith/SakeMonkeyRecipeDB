@@ -55,6 +55,14 @@ PUBLISHNOTE_COLUMN_ORDER = [
 ]
 
 BRIX_PATTERN = re.compile(r"(\d+(?:\.\d+)?)\s*%?\s*(?:brix|\xb0brix)", re.IGNORECASE)
+CREATE_INGREDIENT_TYPE_OPTION = "-- create new type --"
+
+
+def wx_date_from_py(py_date):
+    """Convert Python date to wx.DateTime"""
+    if not py_date:
+        return wx.DateTime.Today()
+    return wx.DateTime.FromDMY(py_date.day, py_date.month - 1, py_date.year)
 
 
 def order_columns(columns, desired_order):
@@ -123,6 +131,65 @@ def describe_starter(starter: Starter) -> str:
     return f"{code} | BatchID {batch_label} | {date_label}"
 
 
+def build_rice_description(session, ingredient_id: str) -> str:
+    """Return formatted rice description from ingredient"""
+    if not ingredient_id:
+        return None
+    ingredient = session.get(Ingredient, ingredient_id)
+    if not ingredient:
+        return None
+    return ingredient.description or ingredient.source or ingredient.ingredientID
+
+
+def sum_starter_field(starters, attr):
+    """Sum a starter attribute, treating missing values as zero"""
+    if not starters:
+        return None
+    total = 0.0
+    has_value = False
+    for starter in starters:
+        value = getattr(starter, attr, None)
+        if value is not None:
+            total += value
+            has_value = True
+    return total if has_value else 0.0
+
+
+def calculate_recipe_starter_totals(session, batch_id: str, starter_batch: str = None):
+    """Calculate initial totals for a recipe from its starters"""
+    starters = []
+    if batch_id:
+        starters = session.exec(select(Starter).where(Starter.BatchID == batch_id)).all()
+    if not starters and starter_batch:
+        starter = session.get(Starter, starter_batch)
+        if starter:
+            starters = [starter]
+    if not starters:
+        return {}
+    
+    totals = {}
+    total_kake = sum_starter_field(starters, "Amt_Kake")
+    total_koji = sum_starter_field(starters, "Amt_Koji")
+    total_water = sum_starter_field(starters, "Amt_water")
+    
+    if total_kake is not None:
+        totals["total_kake_g"] = total_kake
+    if total_koji is not None:
+        totals["total_koji_g"] = total_koji
+    if total_water is not None:
+        totals["total_water_mL"] = total_water
+    return totals
+
+
+def apply_starter_totals_to_recipe_data(session, recipe_data):
+    """Populate recipe data dict with starter totals"""
+    batch_id = recipe_data.get("batchID")
+    starter_batch = recipe_data.get("starter")
+    totals = calculate_recipe_starter_totals(session, batch_id, starter_batch)
+    for key, value in totals.items():
+        recipe_data[key] = value
+
+
 def get_next_starter_batch(session) -> str:
     """Get the next starter batch ID"""
     result = session.exec(select(Starter.StarterBatch).order_by(Starter.StarterBatch.desc())).first()
@@ -151,6 +218,7 @@ def create_shubo_starter(session, batch_id: str, start_date_value: date,
         StarterBatch=starter_batch,
         Date=start_date_value or date.today(),
         BatchID=batch_id,
+        Amt_Kake=0.0,
         Amt_Koji=250.0,
         Amt_water=250.0,
         water_type=water_id,
@@ -158,6 +226,8 @@ def create_shubo_starter(session, batch_id: str, start_date_value: date,
         Koji=koji_id,
         yeast=yeast_id,
         lactic_acid=0.4,
+        MgSO4=0.0,
+        KCl=0.0,
         temp_C=6.0,
     )
     session.add(starter)
@@ -179,10 +249,17 @@ class FormulasPanel(scrolled.ScrolledPanel):
         main_sizer = wx.BoxSizer(wx.VERTICAL)
         
         # Title
+        title_sizer = wx.BoxSizer(wx.HORIZONTAL)
         title = wx.StaticText(self, label="Sake Brewing Formulas Calculator")
         title_font = wx.Font(14, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_BOLD)
         title.SetFont(title_font)
-        main_sizer.Add(title, 0, wx.ALL | wx.CENTER, 10)
+        title_sizer.Add(title, 0, wx.ALL | wx.ALIGN_CENTER_VERTICAL, 5)
+        
+        refresh_btn = wx.Button(self, label="Refresh Data")
+        refresh_btn.Bind(wx.EVT_BUTTON, self.on_refresh_data)
+        title_sizer.Add(refresh_btn, 0, wx.ALL | wx.ALIGN_CENTER_VERTICAL, 5)
+        
+        main_sizer.Add(title_sizer, 0, wx.ALL | wx.CENTER, 10)
         
         # Gravity Correction Calculator with live updates
         gravity_box = wx.StaticBox(self, label="Gravity Correction Calculator (Live Updates)")
@@ -292,20 +369,40 @@ class FormulasPanel(scrolled.ScrolledPanel):
         except Exception:
             pass
     
+    def on_refresh_data(self, event):
+        """Refresh batch IDs and adjustment ingredient choices"""
+        self.load_batch_ids()
+        self.load_adjustment_ingredients()
+        self.on_target_update(None)
+    
+    def extract_sugar_percentage(self, text):
+        """Parse sugar percentage from descriptions"""
+        if not text:
+            return None
+        match = re.search(r"(\d+(?:\.\d+)?)%\s*sugar", text, re.IGNORECASE)
+        if match:
+            try:
+                return float(match.group(1))
+            except ValueError:
+                return None
+        return None
+    
     def load_adjustment_ingredients(self):
         """Load adjustment ingredients (35% Brix amazake)"""
         self.adjustment_ingredient_items = [None]
         try:
+            allowed_types = ["adjuster", IngredientTypeEnum.WATER.value]
             ingredients = self.session.exec(
-                select(Ingredient).where(Ingredient.ingredient_type.in_([
-                    IngredientTypeEnum.RICE.value,
-                    IngredientTypeEnum.KAKI_RICE.value,
-                    IngredientTypeEnum.KOJI_RICE.value
-                ]))
+                select(Ingredient).where(Ingredient.ingredient_type.in_(allowed_types))
             ).all()
             choices = [""]
             for ingredient in ingredients:
-                choices.append(describe_ingredient(ingredient))
+                label = describe_ingredient(ingredient)
+                if ingredient.ingredient_type == "adjuster":
+                    sugar_pct = self.extract_sugar_percentage(ingredient.description)
+                    if sugar_pct:
+                        label = f"{label} ({sugar_pct:.1f}% sugar)"
+                choices.append(label)
                 self.adjustment_ingredient_items.append(ingredient)
             self.adjustment_ingredient.SetItems(choices)
             self.adjustment_ingredient.SetSelection(0)
@@ -329,6 +426,8 @@ class FormulasPanel(scrolled.ScrolledPanel):
         brix = None
         if ingredient and ingredient.description:
             brix = extract_brix_value(ingredient.description)
+            if brix is None and ingredient.ingredient_type == "adjuster":
+                brix = self.extract_sugar_percentage(ingredient.description)
         self.adjustment_brix = brix if brix is not None else 35.0
     
     def on_adjustment_selected(self, event):
@@ -458,6 +557,37 @@ class DataGridPanel(wx.Panel):
     def apply_column_order(self, columns):
         return order_columns(columns, self.get_desired_column_order())
     
+    def get_primary_key_field(self):
+        """Return the primary key column label for current model"""
+        if self.model_class == Recipe:
+            return "batchID"
+        if self.model_class == Ingredient:
+            return "ingredientID"
+        if self.model_class == Starter:
+            return "StarterBatch"
+        if self.model_class == PublishNote:
+            return "BatchID"
+        return None
+    
+    def get_primary_key_value(self, row):
+        """Fetch the primary key value from given grid row"""
+        pk_field = self.get_primary_key_field()
+        if pk_field:
+            for col in range(self.grid.GetNumberCols()):
+                if self.grid.GetColLabelValue(col) == pk_field:
+                    return self.grid.GetCellValue(row, col)
+        if self.grid.GetNumberCols() > 0:
+            return self.grid.GetCellValue(row, 0)
+        return None
+    
+    def can_edit(self):
+        """Return whether edit button should be shown"""
+        return self.model_class in (Ingredient, Recipe, Starter)
+    
+    def can_update(self):
+        """Return whether update button should be shown"""
+        return self.model_class == Recipe
+    
     def init_ui(self):
         sizer = wx.BoxSizer(wx.VERTICAL)
         
@@ -471,13 +601,15 @@ class DataGridPanel(wx.Panel):
         add_btn.Bind(wx.EVT_BUTTON, self.on_add)
         toolbar.Add(add_btn, 0, wx.ALL, 5)
         
-        edit_btn = wx.Button(self, label="Edit Selected")
-        edit_btn.Bind(wx.EVT_BUTTON, self.on_edit)
-        toolbar.Add(edit_btn, 0, wx.ALL, 5)
+        if self.can_edit():
+            edit_btn = wx.Button(self, label="Edit Selected")
+            edit_btn.Bind(wx.EVT_BUTTON, self.on_edit)
+            toolbar.Add(edit_btn, 0, wx.ALL, 5)
         
-        update_btn = wx.Button(self, label="Update Entry")
-        update_btn.Bind(wx.EVT_BUTTON, self.on_update_entry)
-        toolbar.Add(update_btn, 0, wx.ALL, 5)
+        if self.can_update():
+            update_btn = wx.Button(self, label="Update Entry")
+            update_btn.Bind(wx.EVT_BUTTON, self.on_update_entry)
+            toolbar.Add(update_btn, 0, wx.ALL, 5)
         
         delete_btn = wx.Button(self, label="Delete Selected")
         delete_btn.Bind(wx.EVT_BUTTON, self.on_delete)
@@ -490,9 +622,15 @@ class DataGridPanel(wx.Panel):
         self.grid.CreateGrid(0, 0)
         self.grid.EnableEditing(False)
         self.grid.SetSelectionMode(wx.grid.Grid.SelectRows)
+        self.grid.Bind(wx.grid.EVT_GRID_CELL_LEFT_DCLICK, self.on_cell_double_click)
         sizer.Add(self.grid, 1, wx.EXPAND | wx.ALL, 5)
         
         self.SetSizer(sizer)
+    
+    def on_cell_double_click(self, event):
+        """Handle double-click to start editing"""
+        self.on_edit(event)
+        event.Skip()
     
     def load_data(self):
         """Load data with proper ordering per rules.txt"""
@@ -583,8 +721,7 @@ class DataGridPanel(wx.Panel):
             if row is None or row < 0:
                 return None
         
-        # Get the primary key value from the first column (usually ID)
-        pk_value = self.grid.GetCellValue(row, 0)
+        pk_value = self.get_primary_key_value(row)
         if not pk_value:
             return None
         
@@ -616,12 +753,15 @@ class DataGridPanel(wx.Panel):
             return None
         
         for row in range(total_rows):
-            pk_value = self.grid.GetCellValue(row, 0)
+            pk_value = self.get_primary_key_value(row)
             if not pk_value:
                 continue
-            preview_cols = []
+            pk_label = self.get_primary_key_field() or self.grid.GetColLabelValue(0)
+            preview_cols = [f"{pk_label}: {pk_value}"]
             for col in range(min(col_count, 3)):
                 header = self.grid.GetColLabelValue(col)
+                if header == pk_label:
+                    continue
                 cell_value = self.grid.GetCellValue(row, col)
                 preview_cols.append(f"{header}: {cell_value}")
             label = " | ".join(preview_cols)
@@ -651,7 +791,7 @@ class DataGridPanel(wx.Panel):
         elif self.model_class == Starter:
             dlg = AddStarterDialog(self, self.session)
         elif self.model_class == PublishNote:
-            dlg = AddPublishNoteDialog(self, self.session)
+            dlg = AddPublishNoteDialog(self, self.session, record=None)
         else:
             wx.MessageBox("Add functionality not implemented for this table", "Info", wx.OK)
             return
@@ -677,6 +817,7 @@ class DataGridPanel(wx.Panel):
                             recipe_data["water_type"],
                         )
                         recipe_data["starter"] = starter_batch
+                    apply_starter_totals_to_recipe_data(self.session, recipe_data)
                     recipe = Recipe(**recipe_data)
                     self.session.add(recipe)
                     self.session.commit()
@@ -689,22 +830,43 @@ class DataGridPanel(wx.Panel):
                         self.session.commit()
                 elif self.model_class == PublishNote:
                     publish_data = data
+                    # Check if PublishNote with this BatchID already exists
+                    existing_publish = self.session.get(PublishNote, publish_data["BatchID"])
+                    
                     # Get recipe to pull ABV, SMV, etc.
                     recipe = self.session.get(Recipe, publish_data["BatchID"])
                     if recipe:
-                        publish_data["ABV"] = recipe.ABV_pct
-                        publish_data["SMV"] = recipe.SMV
+                        # Only auto-populate if creating new record or if fields are missing
+                        if not existing_publish or not publish_data.get("Style"):
+                            publish_data["Style"] = recipe.style
+                        if not existing_publish or not publish_data.get("Water"):
+                            publish_data["Water"] = recipe.water_type
+                        if not existing_publish or not publish_data.get("Pouch_Date"):
+                            publish_data["Pouch_Date"] = recipe.pouch_date
+                        if not existing_publish or publish_data.get("ABV") is None:
+                            publish_data["ABV"] = recipe.ABV_pct
+                        if not existing_publish or publish_data.get("SMV") is None:
+                            publish_data["SMV"] = recipe.SMV
                         # Calculate batch size
                         total_water = (recipe.total_water_mL or 0.0) + (recipe.final_water_addition_mL or 0.0)
-                        publish_data["Batch_Size_L"] = round(total_water / 1000.0, 2) if total_water else None
+                        if not existing_publish or publish_data.get("Batch_Size_L") is None:
+                            publish_data["Batch_Size_L"] = round(total_water / 1000.0, 2) if total_water else None
                         # Get rice description
-                        if recipe.kake:
-                            rice = self.session.get(Ingredient, recipe.kake)
-                            if rice:
-                                publish_data["Rice"] = f"{rice.ingredientID} - {rice.description or rice.source or ''}"
-                    publish = PublishNote(**publish_data)
-                    self.session.add(publish)
-                    self.session.commit()
+                        if not existing_publish or not publish_data.get("Rice"):
+                            publish_data["Rice"] = build_rice_description(self.session, recipe.kake)
+                    
+                    if existing_publish:
+                        # Update existing record
+                        for key, value in publish_data.items():
+                            if hasattr(existing_publish, key):
+                                setattr(existing_publish, key, value)
+                        self.session.add(existing_publish)
+                        self.session.commit()
+                    else:
+                        # Create new record
+                        publish = PublishNote(**publish_data)
+                        self.session.add(publish)
+                        self.session.commit()
                 self.load_data()
                 wx.MessageBox("Record added successfully", "Success", wx.OK | wx.ICON_INFORMATION)
             except Exception as e:
@@ -720,6 +882,26 @@ class DataGridPanel(wx.Panel):
         
         if self.model_class == Recipe:
             self.open_recipe_update_dialog(record)
+        elif self.model_class == Ingredient:
+            self.open_ingredient_edit_dialog(record)
+        elif self.model_class == Starter:
+            self.open_starter_edit_dialog(record)
+        elif self.model_class == PublishNote:
+            dlg = AddPublishNoteDialog(self, self.session, record=record)
+            if dlg.ShowModal() == wx.ID_OK:
+                try:
+                    data = dlg.GetValue()
+                    for key, value in data.items():
+                        if hasattr(record, key):
+                            setattr(record, key, value)
+                    self.session.add(record)
+                    self.session.commit()
+                    self.load_data()
+                    wx.MessageBox("Record updated successfully", "Success", wx.OK | wx.ICON_INFORMATION)
+                except Exception as e:
+                    wx.MessageBox(f"Error updating record: {str(e)}", "Error", wx.OK | wx.ICON_ERROR)
+                    self.session.rollback()
+            dlg.Destroy()
         else:
             wx.MessageBox("Edit functionality not fully implemented for this table", "Info", wx.OK)
     
@@ -750,6 +932,8 @@ class DataGridPanel(wx.Panel):
                         record.total_kake_g = (record.total_kake_g or 0.0) + update_data["kake_g"]
                     if "koji_g" in update_data:
                         record.total_koji_g = (record.total_koji_g or 0.0) + update_data["koji_g"]
+                    if "water_mL" in update_data:
+                        record.total_water_mL = (record.total_water_mL or 0.0) + update_data["water_mL"]
                 elif update_type == "ferment_finish":
                     if "ferment_finish_gravity" in update_data:
                         record.ferment_finish_gravity = update_data["ferment_finish_gravity"]
@@ -786,8 +970,23 @@ class DataGridPanel(wx.Panel):
                         publish.Description = update_data["publish_comment"]
                         publish.Pouch_Date = update_data.get("pouch_date")
                         publish.Style = record.style
+                        publish.Water = record.water_type
+                        publish.Rice = build_rice_description(self.session, record.kake)
                         publish.ABV = record.ABV_pct
                         publish.SMV = record.SMV
+                elif update_type == "finishing_values":
+                    field_name = update_data.get("field_name")
+                    if field_name and hasattr(record, field_name):
+                        setattr(record, field_name, update_data.get("value"))
+                        publish = self.session.get(PublishNote, record.batchID)
+                        if publish:
+                            if field_name == "pouch_date":
+                                publish.Pouch_Date = update_data.get("value")
+                            if field_name == "ABV_pct":
+                                publish.ABV = update_data.get("value")
+                            if field_name == "SMV":
+                                publish.SMV = update_data.get("value")
+                            self.session.add(publish)
                 
                 self.session.add(record)
                 self.session.commit()
@@ -796,6 +995,40 @@ class DataGridPanel(wx.Panel):
             except Exception as e:
                 wx.MessageBox(f"Error updating record: {str(e)}", "Error", wx.OK | wx.ICON_ERROR)
                 self.session.rollback()
+        dlg.Destroy()
+    
+    def open_ingredient_edit_dialog(self, record):
+        """Open dialog to edit an ingredient"""
+        dlg = AddIngredientDialog(self, self.session, record=record)
+        if dlg.ShowModal() == wx.ID_OK:
+            try:
+                data = dlg.GetValue()
+                for key, value in data.items():
+                    setattr(record, key, value)
+                self.session.add(record)
+                self.session.commit()
+                self.load_data()
+                wx.MessageBox("Ingredient updated successfully", "Success", wx.OK | wx.ICON_INFORMATION)
+            except Exception as e:
+                self.session.rollback()
+                wx.MessageBox(f"Error updating ingredient: {str(e)}", "Error", wx.OK | wx.ICON_ERROR)
+        dlg.Destroy()
+    
+    def open_starter_edit_dialog(self, record):
+        """Open dialog to edit a starter"""
+        dlg = AddStarterDialog(self, self.session, record=record)
+        if dlg.ShowModal() == wx.ID_OK:
+            try:
+                data = dlg.GetValue()
+                for key, value in data.items():
+                    setattr(record, key, value)
+                self.session.add(record)
+                self.session.commit()
+                self.load_data()
+                wx.MessageBox("Starter updated successfully", "Success", wx.OK | wx.ICON_INFORMATION)
+            except Exception as e:
+                self.session.rollback()
+                wx.MessageBox(f"Error updating starter: {str(e)}", "Error", wx.OK | wx.ICON_ERROR)
         dlg.Destroy()
     
     def on_delete(self, event):
@@ -824,12 +1057,20 @@ class DataGridPanel(wx.Panel):
 
 # Dialog classes for data entry
 class AddIngredientDialog(wx.Dialog):
-    """Dialog for adding a new ingredient"""
+    """Dialog for adding or editing an ingredient"""
     
-    def __init__(self, parent, session):
-        super().__init__(parent, title="Add Ingredient", size=(500, 400))
+    def __init__(self, parent, session, record=None):
+        title = "Edit Ingredient" if record else "Add Ingredient"
+        super().__init__(parent, title=title, size=(650, 800))
         self.session = session
+        self.record = record
+        self.is_edit = record is not None
+        self.type_choices = build_ingredient_type_choices(session)
+        if CREATE_INGREDIENT_TYPE_OPTION not in self.type_choices:
+            self.type_choices.append(CREATE_INGREDIENT_TYPE_OPTION)
         self.init_ui()
+        if self.is_edit:
+            self.populate_from_record()
     
     def init_ui(self):
         sizer = wx.BoxSizer(wx.VERTICAL)
@@ -841,9 +1082,18 @@ class AddIngredientDialog(wx.Dialog):
         
         # Ingredient Type
         sizer.Add(wx.StaticText(self, label="Ingredient Type:"), 0, wx.ALL, 5)
-        types = [e.value for e in IngredientTypeEnum]
-        self.ingredient_type = wx.Choice(self, choices=types)
+        self.ingredient_type = wx.Choice(self, choices=self.type_choices)
+        if self.type_choices:
+            self.ingredient_type.SetSelection(0)
+        self.ingredient_type.Bind(wx.EVT_CHOICE, self.on_type_change)
         sizer.Add(self.ingredient_type, 0, wx.EXPAND | wx.ALL, 5)
+        
+        self.new_type_label = wx.StaticText(self, label="New Ingredient Type:")
+        self.new_type_field = wx.TextCtrl(self)
+        self.new_type_label.Hide()
+        self.new_type_field.Hide()
+        sizer.Add(self.new_type_label, 0, wx.LEFT | wx.RIGHT, 5)
+        sizer.Add(self.new_type_field, 0, wx.EXPAND | wx.LEFT | wx.RIGHT | wx.BOTTOM, 5)
         
         # Accession Date
         sizer.Add(wx.StaticText(self, label="Accession Date:"), 0, wx.ALL, 5)
@@ -860,12 +1110,13 @@ class AddIngredientDialog(wx.Dialog):
         
         # Description
         sizer.Add(wx.StaticText(self, label="Description (up to 300 chars):"), 0, wx.ALL, 5)
-        self.description = wx.TextCtrl(self, style=wx.TE_MULTILINE, size=(-1, 100))
+        self.description = wx.TextCtrl(self, style=wx.TE_MULTILINE, size=(-1, 150))
         sizer.Add(self.description, 1, wx.EXPAND | wx.ALL, 5)
         
         # Buttons
         btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        ok_btn = wx.Button(self, wx.ID_OK, "Add")
+        ok_label = "Save" if self.is_edit else "Add"
+        ok_btn = wx.Button(self, wx.ID_OK, ok_label)
         cancel_btn = wx.Button(self, wx.ID_CANCEL, "Cancel")
         btn_sizer.Add(ok_btn, 0, wx.ALL, 5)
         btn_sizer.Add(cancel_btn, 0, wx.ALL, 5)
@@ -873,28 +1124,49 @@ class AddIngredientDialog(wx.Dialog):
         
         self.SetSizer(sizer)
     
+    def on_type_change(self, event):
+        """Show entry field when creating a new type"""
+        create_selected = self.ingredient_type.GetStringSelection() == CREATE_INGREDIENT_TYPE_OPTION
+        self.new_type_label.Show(create_selected)
+        self.new_type_field.Show(create_selected)
+        self.Layout()
+    
+    def populate_from_record(self):
+        """Fill the form with an existing ingredient"""
+        if self.record.ingredientID:
+            self.ingredient_id.SetValue(self.record.ingredientID)
+            self.ingredient_id.Enable(False)
+        if self.record.ingredient_type and self.record.ingredient_type not in self.type_choices:
+            idx = len(self.type_choices) - 1  # insert before create new option
+            self.type_choices.insert(idx, self.record.ingredient_type)
+            self.ingredient_type.SetItems(self.type_choices)
+        if self.record.ingredient_type:
+            idx = self.ingredient_type.FindString(self.record.ingredient_type)
+            if idx != wx.NOT_FOUND:
+                self.ingredient_type.SetSelection(idx)
+        if self.record.acc_date:
+            self.acc_date.SetValue(wx_date_from_py(self.record.acc_date))
+        self.source.SetValue(self.record.source or "")
+        self.description.SetValue(self.record.description or "")
+    
     def GetValue(self):
         """Get the ingredient data"""
         wx_date = self.acc_date.GetValue()
         acc_date_value = date(wx_date.year, wx_date.month + 1, wx_date.day)
         
-        return {
-            "ingredientID": self.ingredient_id.GetValue().strip() or None,
-            "ingredient_type": self.ingredient_type.GetStringSelection(),
-            "acc_date": acc_date_value,
-            "source": self.source.GetValue().strip() or None,
-            "description": self.description.GetValue().strip() or None,
-        }
-
-
-    def GetValue(self):
-        """Get the ingredient data"""
-        wx_date = self.acc_date.GetValue()
-        acc_date_value = date(wx_date.year, wx_date.month + 1, wx_date.day)
+        type_value = self.ingredient_type.GetStringSelection()
+        if type_value == CREATE_INGREDIENT_TYPE_OPTION:
+            custom = self.new_type_field.GetValue().strip()
+            if custom:
+                type_value = custom
+            elif self.record and self.record.ingredient_type:
+                type_value = self.record.ingredient_type
+            else:
+                type_value = None
         
         return {
             "ingredientID": self.ingredient_id.GetValue().strip() or None,
-            "ingredient_type": self.ingredient_type.GetStringSelection(),
+            "ingredient_type": type_value,
             "acc_date": acc_date_value,
             "source": self.source.GetValue().strip() or None,
             "description": self.description.GetValue().strip() or None,
@@ -914,11 +1186,23 @@ def build_starter_choices(session):
     return [describe_starter(st) for st in starters], [st.StarterBatch for st in starters]
 
 
+def build_ingredient_type_choices(session):
+    """Return sorted list of known ingredient types"""
+    known_types = {e.value for e in IngredientTypeEnum}
+    db_types = session.exec(select(Ingredient.ingredient_type).where(Ingredient.ingredient_type.isnot(None))).all()
+    for entry in db_types:
+        if isinstance(entry, str):
+            known_types.add(entry)
+        elif isinstance(entry, tuple) and entry and entry[0]:
+            known_types.add(entry[0])
+    return sorted(known_types)
+
+
 class AddRecipeDialog(wx.Dialog):
     """Dialog for adding a new recipe"""
     
     def __init__(self, parent, session):
-        super().__init__(parent, title="Add Recipe", size=(600, 700))
+        super().__init__(parent, title="Add Recipe", size=(750, 850))
         self.session = session
         self.init_ui()
     
@@ -1079,12 +1363,17 @@ class AddRecipeDialog(wx.Dialog):
 
 
 class AddStarterDialog(wx.Dialog):
-    """Dialog for adding a new starter"""
+    """Dialog for adding or editing a starter"""
     
-    def __init__(self, parent, session):
-        super().__init__(parent, title="Add Starter", size=(500, 600))
+    def __init__(self, parent, session, record=None):
+        title = "Edit Starter" if record else "Add Starter"
+        super().__init__(parent, title=title, size=(800, 600))
         self.session = session
+        self.record = record
+        self.is_edit = record is not None
         self.init_ui()
+        if self.is_edit:
+            self.populate_from_record()
     
     def init_ui(self):
         panel = scrolled.ScrolledPanel(self)
@@ -1189,6 +1478,33 @@ class AddStarterDialog(wx.Dialog):
         main_sizer.Add(btn_sizer, 0, wx.ALL | wx.CENTER, 5)
         self.SetSizer(main_sizer)
     
+    def select_combo_value(self, combo, values, target):
+        if target and target in values:
+            combo.SetSelection(values.index(target))
+    
+    def set_text_value(self, ctrl, value):
+        ctrl.SetValue("" if value is None else str(value))
+    
+    def populate_from_record(self):
+        """Fill the form with an existing starter record"""
+        if self.record.StarterBatch:
+            self.starter_batch.SetValue(str(self.record.StarterBatch))
+            self.starter_batch.Enable(False)
+        if self.record.Date:
+            self.starter_date.SetValue(wx_date_from_py(self.record.Date))
+        self.batch_id.SetValue(self.record.BatchID or "")
+        self.select_combo_value(self.kake, self.kake_ids, self.record.Kake)
+        self.select_combo_value(self.koji, self.koji_ids, self.record.Koji)
+        self.select_combo_value(self.yeast, self.yeast_ids, self.record.yeast)
+        self.select_combo_value(self.water_type, self.water_ids, self.record.water_type)
+        self.set_text_value(self.amt_kake, self.record.Amt_Kake)
+        self.set_text_value(self.amt_koji, self.record.Amt_Koji)
+        self.set_text_value(self.amt_water, self.record.Amt_water)
+        self.set_text_value(self.lactic_acid, self.record.lactic_acid)
+        self.set_text_value(self.mgso4, self.record.MgSO4)
+        self.set_text_value(self.kcl, self.record.KCl)
+        self.set_text_value(self.temp, self.record.temp_C)
+    
     def GetValue(self):
         """Get the starter data"""
         wx_date = self.starter_date.GetValue()
@@ -1226,21 +1542,27 @@ class AddStarterDialog(wx.Dialog):
 
 
 class AddPublishNoteDialog(wx.Dialog):
-    """Dialog for adding a publish note"""
+    """Dialog for adding or editing a publish note"""
     
-    def __init__(self, parent, session):
-        super().__init__(parent, title="Add Publish Note", size=(500, 400))
+    def __init__(self, parent, session, record=None):
+        title = "Edit Publish Note" if record else "Add Publish Note"
+        super().__init__(parent, title=title, size=(650, 720))
         self.session = session
+        self.record = record
         self.init_ui()
+        if record:
+            self.load_record_data()
     
     def init_ui(self):
         sizer = wx.BoxSizer(wx.VERTICAL)
+        self.rice_value = None
         
         # Batch ID
         sizer.Add(wx.StaticText(self, label="BatchID:"), 0, wx.ALL, 5)
         recipes = self.session.exec(select(Recipe.batchID).where(Recipe.batchID.isnot(None))).all()
         batch_ids = [str(bid) for bid in recipes if bid]
         self.batch_id = wx.ComboBox(self, choices=batch_ids, style=wx.CB_DROPDOWN)
+        self.batch_id.Bind(wx.EVT_COMBOBOX, self.on_batch_id_selected)
         sizer.Add(self.batch_id, 0, wx.EXPAND | wx.ALL, 5)
         
         # Pouch Date
@@ -1265,6 +1587,10 @@ class AddPublishNoteDialog(wx.Dialog):
         self.water_ids = water_ids
         sizer.Add(self.water, 0, wx.EXPAND | wx.ALL, 5)
         
+        sizer.Add(wx.StaticText(self, label="Rice (auto):"), 0, wx.ALL, 5)
+        self.rice_display = wx.TextCtrl(self, style=wx.TE_READONLY)
+        sizer.Add(self.rice_display, 0, wx.EXPAND | wx.ALL, 5)
+        
         # Description
         sizer.Add(wx.StaticText(self, label="Description:"), 0, wx.ALL, 5)
         self.description = wx.TextCtrl(self, style=wx.TE_MULTILINE, size=(-1, 150))
@@ -1272,7 +1598,8 @@ class AddPublishNoteDialog(wx.Dialog):
         
         # Buttons
         btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        ok_btn = wx.Button(self, wx.ID_OK, "Add")
+        ok_label = "Update" if self.record else "Add"
+        ok_btn = wx.Button(self, wx.ID_OK, ok_label)
         cancel_btn = wx.Button(self, wx.ID_CANCEL, "Cancel")
         btn_sizer.Add(ok_btn, 0, wx.ALL, 5)
         btn_sizer.Add(cancel_btn, 0, wx.ALL, 5)
@@ -1280,6 +1607,86 @@ class AddPublishNoteDialog(wx.Dialog):
         
         self.SetSizer(sizer)
     
+    def on_batch_id_selected(self, event):
+        """Load existing publish note data when BatchID is selected"""
+        batch_id = self.batch_id.GetValue().strip()
+        if not batch_id:
+            return
+        
+        existing = self.session.get(PublishNote, batch_id)
+        if existing:
+            self.apply_publish_note(existing)
+        
+        recipe = self.session.get(Recipe, batch_id)
+        if recipe:
+            self.apply_recipe_defaults(recipe)
+    
+    def set_water_selection(self, ingredient_id):
+        if ingredient_id and ingredient_id in self.water_ids:
+            idx = self.water_ids.index(ingredient_id)
+            self.water.SetSelection(idx)
+    
+    def set_rice_value(self, value):
+        self.rice_value = value
+        self.rice_display.SetValue(value or "")
+    
+    def apply_recipe_defaults(self, recipe):
+        if recipe.pouch_date:
+            self.pouch_date.SetValue(wx_date_from_py(recipe.pouch_date))
+        if recipe.style:
+            style_idx = self.style.FindString(recipe.style)
+            if style_idx != wx.NOT_FOUND:
+                self.style.SetSelection(style_idx)
+        self.set_water_selection(recipe.water_type)
+        rice_desc = build_rice_description(self.session, recipe.kake)
+        if rice_desc:
+            self.set_rice_value(rice_desc)
+    
+    def apply_publish_note(self, note):
+        if note.Pouch_Date:
+            self.pouch_date.SetValue(wx_date_from_py(note.Pouch_Date))
+        if note.Style:
+            style_idx = self.style.FindString(note.Style)
+            if style_idx != wx.NOT_FOUND:
+                self.style.SetSelection(style_idx)
+        self.set_water_selection(note.Water)
+        self.set_rice_value(note.Rice)
+        if note.Description:
+            self.description.SetValue(note.Description)
+    
+    def load_record_data(self):
+        """Load existing record data into the form"""
+        if not self.record:
+            return
+        
+        batch_id = self.record.BatchID
+        if batch_id:
+            idx = self.batch_id.FindString(batch_id)
+            if idx != wx.NOT_FOUND:
+                self.batch_id.SetSelection(idx)
+        
+        if self.record.Pouch_Date:
+            wx_date = wx.DateTime.FromDMY(
+                self.record.Pouch_Date.day,
+                self.record.Pouch_Date.month - 1,
+                self.record.Pouch_Date.year
+            )
+            self.pouch_date.SetValue(wx_date)
+        
+        if self.record.Style:
+            style_idx = self.style.FindString(self.record.Style)
+            if style_idx != wx.NOT_FOUND:
+                self.style.SetSelection(style_idx)
+        
+        self.set_water_selection(self.record.Water)
+        self.set_rice_value(self.record.Rice)
+        
+        if self.record.Description:
+            self.description.SetValue(self.record.Description)
+        
+        recipe = self.session.get(Recipe, self.record.BatchID)
+        if recipe:
+            self.apply_recipe_defaults(recipe)
     def GetValue(self):
         """Get the publish note data"""
         wx_date = self.pouch_date.GetValue()
@@ -1292,17 +1699,36 @@ class AddPublishNoteDialog(wx.Dialog):
             "Pouch_Date": pouch_date_value,
             "Style": self.style.GetStringSelection(),
             "Water": self.water_ids[water_idx] if water_idx >= 0 else None,
+            "Rice": self.rice_value,
             "Description": self.description.GetValue().strip(),
         }
 
 
 class UpdateRecipeDialog(wx.Dialog):
     """Dialog for updating a recipe"""
+    FINISHING_FIELD_OPTIONS = [
+        ("Final Measured Temp (°C)", ("final_measured_temp_C", "float")),
+        ("Final Measured Gravity", ("final_measured_gravity", "float")),
+        ("Final Measured Brix (%)", ("final_measured_Brix_pct", "float")),
+        ("Final Gravity", ("final_gravity", "float")),
+        ("ABV (%)", ("ABV_pct", "float")),
+        ("SMV", ("SMV", "float")),
+        ("Final Water Addition (mL)", ("final_water_addition_mL", "float")),
+        ("Ferment Finish Gravity", ("ferment_finish_gravity", "float")),
+        ("Ferment Finish Brix (%)", ("ferment_finish_brix", "float")),
+        ("Clarified", ("clarified", "bool")),
+        ("Pasteurized", ("pasteurized", "bool")),
+        ("Pasteurization Notes", ("pasteurization_notes", "text")),
+        ("Finishing Additions", ("finishing_additions", "text")),
+        ("Pouch Date", ("pouch_date", "date")),
+    ]
     
     def __init__(self, parent, session, recipe):
         super().__init__(parent, title="Update Recipe", size=(600, 700))
         self.session = session
         self.recipe = recipe
+        self.publish_note = self.session.get(PublishNote, recipe.batchID) if recipe and recipe.batchID else None
+        self.finishing_value_ctrl = None
         self.init_ui()
         self.load_recipe_data()
     
@@ -1312,7 +1738,7 @@ class UpdateRecipeDialog(wx.Dialog):
         
         # Update type
         sizer.Add(wx.StaticText(panel, label="Update Type:"), 0, wx.ALL, 5)
-        update_types = ["addition1", "addition2", "addition3", "ferment_finish", "batch_finishing"]
+        update_types = ["addition1", "addition2", "addition3", "ferment_finish", "batch_finishing", "finishing_values"]
         self.update_type = wx.Choice(panel, choices=update_types)
         self.update_type.Bind(wx.EVT_CHOICE, self.on_update_type_change)
         sizer.Add(self.update_type, 0, wx.EXPAND | wx.ALL, 5)
@@ -1345,6 +1771,89 @@ class UpdateRecipeDialog(wx.Dialog):
         """Load existing recipe data"""
         pass  # Could pre-populate fields
     
+    def populate_batch_finishing_defaults(self):
+        """Prefill batch finishing fields from recipe/publish note"""
+        if not self.recipe:
+            return
+        def set_text(key, value):
+            ctrl = self.field_controls.get(key)
+            if isinstance(ctrl, wx.TextCtrl) and value is not None:
+                ctrl.SetValue(str(value))
+        def set_float(key, value):
+            if value is None:
+                return
+            ctrl = self.field_controls.get(key)
+            if isinstance(ctrl, wx.TextCtrl):
+                ctrl.SetValue(str(value))
+        def set_bool(key, value):
+            ctrl = self.field_controls.get(key)
+            if isinstance(ctrl, wx.CheckBox) and value is not None:
+                ctrl.SetValue(bool(value))
+        def set_date(key, value):
+            ctrl = self.field_controls.get(key)
+            if isinstance(ctrl, wx.adv.DatePickerCtrl) and isinstance(value, date):
+                ctrl.SetValue(wx_date_from_py(value))
+        
+        set_float("final_measured_temp_C", self.recipe.final_measured_temp_C)
+        set_float("final_measured_Brix_pct", self.recipe.final_measured_Brix_pct)
+        set_float("final_measured_gravity", self.recipe.final_measured_gravity)
+        set_float("final_water_addition_mL", self.recipe.final_water_addition_mL)
+        set_bool("clarified", self.recipe.clarified)
+        set_bool("pasteurized", self.recipe.pasteurized)
+        set_text("pasteurization_notes", self.recipe.pasteurization_notes)
+        set_text("finishing_additions", self.recipe.finishing_additions)
+        if self.recipe.pouch_date:
+            set_date("pouch_date", self.recipe.pouch_date)
+        if self.publish_note and self.publish_note.Description:
+            ctrl = self.field_controls.get("publish_comment")
+            if isinstance(ctrl, wx.TextCtrl):
+                ctrl.SetValue(self.publish_note.Description)
+    
+    def on_finishing_field_change(self, event):
+        """Show appropriate control for selected finishing field"""
+        if not hasattr(self, "finishing_value_panel"):
+            return
+        panel_sizer = self.finishing_value_panel.GetSizer()
+        for child in self.finishing_value_panel.GetChildren():
+            child.Destroy()
+        panel_sizer.Clear()
+        self.finishing_value_ctrl = None
+        
+        if not hasattr(self, "finishing_field_choice"):
+            self.finishing_value_panel.Layout()
+            return
+        
+        selection = self.finishing_field_choice.GetStringSelection()
+        if not selection:
+            self.finishing_value_panel.Layout()
+            return
+        
+        lookup = dict(self.FINISHING_FIELD_OPTIONS)
+        attr, field_type = lookup.get(selection, (None, None))
+        if attr is None:
+            self.finishing_value_panel.Layout()
+            return
+        
+        current_value = getattr(self.recipe, attr, None)
+        
+        if field_type == "bool":
+            ctrl = wx.CheckBox(self.finishing_value_panel)
+            ctrl.SetValue(bool(current_value))
+        elif field_type == "date":
+            ctrl = wx.adv.DatePickerCtrl(self.finishing_value_panel, style=wx.adv.DP_DROPDOWN)
+            if isinstance(current_value, date):
+                ctrl.SetValue(wx_date_from_py(current_value))
+        else:
+            ctrl = wx.TextCtrl(self.finishing_value_panel)
+            if current_value is not None:
+                ctrl.SetValue(str(current_value))
+        
+        panel_sizer.Add(ctrl, 0, wx.ALL | wx.EXPAND, 5)
+        self.finishing_value_ctrl = ctrl
+        self.finishing_value_panel.Layout()
+        self.fields_panel.Layout()
+        self.Layout()
+    
     def on_update_type_change(self, event):
         """Show/hide fields based on update type"""
         # Clear existing fields
@@ -1365,6 +1874,11 @@ class UpdateRecipeDialog(wx.Dialog):
             koji_field = wx.TextCtrl(self.fields_panel)
             self.fields_sizer.Add(koji_field, 0, wx.EXPAND | wx.ALL, 5)
             self.field_controls["koji_g"] = koji_field
+            
+            self.fields_sizer.Add(wx.StaticText(self.fields_panel, label=f"{update_type.capitalize()} Water Addition (mL):"), 0, wx.ALL, 5)
+            water_field = wx.TextCtrl(self.fields_panel)
+            self.fields_sizer.Add(water_field, 0, wx.EXPAND | wx.ALL, 5)
+            self.field_controls["water_mL"] = water_field
             
             self.fields_sizer.Add(wx.StaticText(self.fields_panel, label=f"{update_type.capitalize()} Notes:"), 0, wx.ALL, 5)
             notes_field = wx.TextCtrl(self.fields_panel, style=wx.TE_MULTILINE, size=(-1, 80))
@@ -1438,6 +1952,23 @@ class UpdateRecipeDialog(wx.Dialog):
             pouch_date = wx.adv.DatePickerCtrl(self.fields_panel, style=wx.adv.DP_DROPDOWN)
             self.fields_sizer.Add(pouch_date, 0, wx.EXPAND | wx.ALL, 5)
             self.field_controls["pouch_date"] = pouch_date
+            self.populate_batch_finishing_defaults()
+        
+        elif update_type == "finishing_values":
+            self.fields_sizer.Add(wx.StaticText(self.fields_panel, label="Finishing Field:"), 0, wx.ALL, 5)
+            choices = [label for label, _ in self.FINISHING_FIELD_OPTIONS]
+            self.finishing_field_choice = wx.Choice(self.fields_panel, choices=choices)
+            self.fields_sizer.Add(self.finishing_field_choice, 0, wx.EXPAND | wx.ALL, 5)
+            self.finishing_field_choice.Bind(wx.EVT_CHOICE, self.on_finishing_field_change)
+            
+            self.fields_sizer.Add(wx.StaticText(self.fields_panel, label="Value:"), 0, wx.ALL, 5)
+            self.finishing_value_panel = wx.Panel(self.fields_panel)
+            self.finishing_value_panel.SetSizer(wx.BoxSizer(wx.VERTICAL))
+            self.fields_sizer.Add(self.finishing_value_panel, 0, wx.EXPAND | wx.ALL, 5)
+            
+            if choices:
+                self.finishing_field_choice.SetSelection(0)
+                self.on_finishing_field_change(None)
         
         self.fields_panel.Layout()
         self.Layout()
@@ -1463,7 +1994,105 @@ class UpdateRecipeDialog(wx.Dialog):
                 wx_date = control.GetValue()
                 data[key] = date(wx_date.year, wx_date.month + 1, wx_date.day)
         
+        if update_type == "finishing_values":
+            lookup = dict(self.FINISHING_FIELD_OPTIONS)
+            field_label = self.finishing_field_choice.GetStringSelection() if hasattr(self, "finishing_field_choice") else None
+            attr, field_type = lookup.get(field_label, (None, None))
+            value = None
+            ctrl = getattr(self, "finishing_value_ctrl", None)
+            if attr:
+                if field_type == "bool" and isinstance(ctrl, wx.CheckBox):
+                    value = ctrl.GetValue()
+                elif field_type == "date" and isinstance(ctrl, wx.adv.DatePickerCtrl):
+                    wx_date = ctrl.GetValue()
+                    value = date(wx_date.year, wx_date.month + 1, wx_date.day)
+                elif isinstance(ctrl, wx.TextCtrl):
+                    raw = ctrl.GetValue().strip()
+                    if raw:
+                        if field_type == "float":
+                            try:
+                                value = float(raw)
+                            except ValueError:
+                                value = raw
+                        else:
+                            value = raw
+            data["field_name"] = attr
+            data["value"] = value
+        
         return data
+
+
+class ValidationPanel(wx.Panel):
+    """Panel to validate rule compliance before sync"""
+    
+    def __init__(self, parent, session):
+        super().__init__(parent)
+        self.session = session
+        self.init_ui()
+    
+    def init_ui(self):
+        main_sizer = wx.BoxSizer(wx.VERTICAL)
+        
+        info = wx.StaticText(
+            self,
+            label="Run validations to ensure Recipes, Publish Notes, and Ingredients remain in sync "
+                  "before pushing updates to Google Sheets."
+        )
+        info.Wrap(600)
+        main_sizer.Add(info, 0, wx.ALL, 10)
+        
+        btn_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        run_btn = wx.Button(self, label="Run Validation Checks")
+        run_btn.Bind(wx.EVT_BUTTON, self.on_run_validation)
+        btn_sizer.Add(run_btn, 0, wx.ALL, 5)
+        main_sizer.Add(btn_sizer, 0, wx.ALL, 5)
+        
+        self.results = wx.TextCtrl(self, style=wx.TE_MULTILINE | wx.TE_READONLY | wx.TE_RICH, size=(-1, 300))
+        main_sizer.Add(self.results, 1, wx.EXPAND | wx.ALL, 5)
+        
+        self.SetSizer(main_sizer)
+    
+    def log_results(self, messages):
+        if not messages:
+            self.results.SetValue("All validation checks passed. Safe to sync.")
+        else:
+            text = "\n".join(f"- {msg}" for msg in messages)
+            self.results.SetValue(text)
+    
+    def on_run_validation(self, event):
+        messages = self.run_checks()
+        self.log_results(messages)
+    
+    def run_checks(self):
+        issues = []
+        publish_notes = self.session.exec(select(PublishNote)).all()
+        recipes_by_id = {recipe.batchID: recipe for recipe in self.session.exec(select(Recipe)).all() if recipe.batchID}
+        
+        for publish in publish_notes:
+            recipe = recipes_by_id.get(publish.BatchID)
+            if not recipe:
+                issues.append(f"Publish note {publish.BatchID} has no matching recipe.")
+                continue
+            expected_water = recipe.water_type or ""
+            actual_water = publish.Water or ""
+            if expected_water != actual_water:
+                issues.append(f"{publish.BatchID}: Water mismatch (recipe {expected_water} vs publish {actual_water}).")
+            expected_rice = (build_rice_description(self.session, recipe.kake) or "").strip()
+            actual_rice = (publish.Rice or "").strip()
+            if expected_rice and actual_rice != expected_rice:
+                issues.append(f"{publish.BatchID}: Rice description mismatch.")
+            if recipe.ABV_pct is not None and publish.ABV != recipe.ABV_pct:
+                issues.append(f"{publish.BatchID}: ABV mismatch (recipe {recipe.ABV_pct} vs publish {publish.ABV}).")
+            if recipe.SMV is not None and publish.SMV != recipe.SMV:
+                issues.append(f"{publish.BatchID}: SMV mismatch (recipe {recipe.SMV} vs publish {publish.SMV}).")
+            if recipe.pouch_date and publish.Pouch_Date != recipe.pouch_date:
+                issues.append(f"{publish.BatchID}: Pouch date mismatch.")
+        
+        for recipe in recipes_by_id.values():
+            if recipe.pouch_date and not self.session.get(PublishNote, recipe.batchID):
+                issues.append(f"Recipe {recipe.batchID} has pouch date but no publish note.")
+        
+        return issues
 
 
 class GoogleSyncPanel(wx.Panel):
@@ -1526,6 +2155,17 @@ class GoogleSyncPanel(wx.Panel):
     def on_sync_to(self, event):
         """Handle sync-to button"""
         spreadsheet_id = self.get_spreadsheet_id()
+        validator = getattr(self.frame, "validation_panel", None)
+        if validator:
+            issues = validator.run_checks()
+            validator.log_results(issues)
+            if issues:
+                wx.MessageBox(
+                    "Validation issues detected. Please resolve them before syncing.",
+                    "Validation Required",
+                    wx.OK | wx.ICON_WARNING
+                )
+                return
         try:
             sync_to_google_sheets(spreadsheet_id)
             wx.MessageBox("Backup completed successfully!", "Success", wx.OK | wx.ICON_INFORMATION)
@@ -1580,6 +2220,11 @@ class MainFrame(wx.Frame):
         # Formulas tab
         formulas_panel = FormulasPanel(notebook, self.session)
         notebook.AddPage(formulas_panel, "Formulas")
+        
+        # Validation tab
+        validation_panel = ValidationPanel(notebook, self.session)
+        notebook.AddPage(validation_panel, "Validate")
+        self.validation_panel = validation_panel
         
         # Google Sync tab
         google_sync_panel = GoogleSyncPanel(notebook, self)

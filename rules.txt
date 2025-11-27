@@ -57,14 +57,14 @@ Database table descriptions:
      - temp_C is a temperature in C at which the starter began it's ferment
 
 
-    PublishNotes Table: pared down version of details from the recipe table, using good puncutation and grammar for public view
+    PublishNotes Table: pared down version of details from the recipe table, using good puncutation capitalisation and grammar for public view
      - BatchID the unifying reference key across tables for the batch
      - Pouch_Date indicates when the batch was completed and pouched (use a date type)
-     - Style a categorical limited to the few types you have seen (pure,rustic,rustic_experimental)
-     - Water is a categorical ingredientID from the ingredient table of the category water (spring, well, distilled)
+     - Style a categorical limited to the few types you have seen (Pure, Rustic, Rustic Experimental)
+     - Water is a categorical ingredientID from the ingredient table of the category water (Spring, Well, Distilled)
      - ABV ABV_% value from recipe table for the corresponding batchID
      - SMV SMV value from recipe table for the corresponding batchID
-     - Batch_Size_L total_water_mL from recipe table plus any final water or finishing additions volume converted to L
+     - Batch_Size_L conversion of total_water_mL from recipe table plus any final water or finishing additions volume converted to L
      - Rice description of kake_rice used in the batch coming from the ingredient table
      - Description tasting notes and brief sake recipe description.
 
@@ -73,52 +73,80 @@ Functionality:
     formulas page should be a couple of independent live calculators based on entered values, for mocking up and determining any final additions to add. use 'gui_app.py' Formulas tab as a basis which includes:
     entry fields for calibrated hydrometer temp (assume 20C or 15.6C), measured specific gravity, measured %Brix
     live calculate SMV and ABV% from corrected gravity and measured %brix values
-    live calculate dilution or adjustments (using 35% Brix amazake ingredientID) to bring the final corrected gravity, %Brix, SMV, and ABV% to a target profile. Target profiles include: Pure (11% brix, 1.005 SG) and Mixer (12% brix, 0.995 SG). include dropdown adjuster ingredient_type to select what adjustment ingredient to use, reading the %brix from the description of that ingredient from the ingredient table
+    live calculate dilution or adjustments (using 35% Brix amazake ingredientID) to bring the final corrected gravity, %Brix, SMV, and ABV% to a target profile. Target profiles include: Pure (11% brix, 1.005 SG) and Mixer (12% brix, 0.995 SG). include dropdown adjuster ingredient_type to select what adjustment ingredient to use (adjuster or water ingredient_types only), reading the %brix from the description of that ingredient from the ingredient table
 
-    Database View page:
-    a scrollable data table preview of the database entries for review
+    Database View:
+    for every table page, a scrollable data table preview using the Google Sheet column order of the database entries for review for said page.
 
     Google sheet sync page: option to initate sync with assoicated google sheet backup, default to the SakeMonkeyRecipeDatabase google sheet with sheets id: 1wGSiuApdScc-RULpSyecmA_km4J6k9KYOp0rz3nT2mM using the service_account.json credentials.
 
-    add-ingredient: 
-    - alphanumeric field for ingredientID for the new ingredient
-    - drop down choice for ingredient_type, with option to create a new ingredient_type, list all available types by default
-    - acc_date defaults to current date, but should be the date that the ingredient was included in batches, use a calendar pop-out for picking date if the date is not 'today'
-    - alphanumeric field to detail the vendor source of the ingredient
-    - alphanumeric field that can hold at least 300 character description of the ingredient and any other details to help describe the ingredient
+    Ingredient page:
+        add-ingredient: popup box big enough to see all entry fields and save/cancel options
+        - alphanumeric field for ingredientID for the new ingredient
+        - drop down choice for ingredient_type, with option to create a new ingredient_type, list all available types by default
+        - acc_date defaults to current date, but should be the date that the ingredient was included in batches, use a calendar pop-out for picking date if the date is not 'today'
+        - alphanumeric field to detail the vendor source of the ingredient
+        - alphanumeric field that can hold at least 300 character description of the ingredient and any other details to help describe the ingredient
 
-    add-recipe:
-    - alphanumeric field following the rules for a batchID definition ('??[R|P|M]') to indicate the batch and the trakerID across database tables
-    - numeric field that should autoparse the batchID feild for the numeric component, to track the batch number, it should increment in the database, and provide a warning message if the new entry is a sinificant increment increase. If the batch number and batchID already exist, provide a warning, and suggest changing input to the 'update-recipe' tab.
-    - style drop down, for which style the batch is following, (pure, rustic, rustic_experimental, mixer), with given option to create a new style in place.
-    - calendar pop-out to indicate the start date of the batch, which should be 3 days after the starter_batch was started.
-    - kake selection drop down, pulling ingredients from the ingredient table that have a 'ingredient_type' of kake_rice or rice, default select the last value of kake_rice in the ingredients table, and have all the rice and kake_rice ingredient_type ingredients available in the drop selction field
-    - koji selection drop down, pulling ingredients from the ingredient table that have a 'ingredient_type' of koji_rice or rice, default select the 'koji50' ingredientID in the ingredients table, and have all the rice and koji_rice ingredient_type ingredients available in the drop selction field
-    - yeast selection drop down, defaulting to the 'Prop_sake9' yeast ingredient from the ingredients table, and have all yeast ingredient_type options available in the drop down
-    - water selection drop down, with all water ingredient_type ingredients available in the drop down
-    - for starter selection have a starterbatch dropdown. the starterbatch dropdown should default to the 'Shubo' starter batch which is 250g Koji, 250ml Water, .4g Lactic Acid at 6C, with a start date of 3 days before the recepie start date, display a warning notification if it is not, and ask for user amendment if it's wrong
-    - when creating a new recipe, the ferment_temp_C field should default to 6C
+        edit-entry aka edit-ingredient:
+        - same as add-ingredient popup dialog with an additional pre-filter popup or dropdown field to select which ingredient to edit. Populate options and fields with what exists in the table for the ingredient, allowing for entry to be edited then saved inplace.
+        - double-clicking an entry field button should open this dialog popup box 
 
-    update-recipe:
-     - drop down menu on which batchID to update
-     - drop down menu to select what kind of update to perform on the batch: addition1, addition2, addition3, ferment_finish measurements, batch finishing
-        - Addition1,Addition2,Addition3:
-            - kake_rice addition: numeric field indicating in grams how much kake rice was added on the addition to the Moromi
-            - koji_rice addition: numeric field indicating in grams how much koji rice was added on the addition to the Moromi
-            - Addition[1|2|3]_Notes: text field to detail any addition notes or comments at the addition
-        - ferment_finish measurements:
-            - ferment_finish_gravity
-            - ferment_finish_brix
-        - batch finishing:
-            - final product measuring temperature: float number entry
-            - calibrated measuring temperature: drop down to select 15.6C or 20C
-            - final product measured Brix%: float number entry
-            - final product measured gravity: float number entry
-            - final_water_addition_mL
-            - clarified boolean checkbox
-            - pasteurized boolean checkbox
-            - pasteurization_notes: text field to detail any addition notes or comments at the batch finish when pasteurizing
-            - finishing_additions: text field to detail any addition notes or comments at the batch finish for adjusting to target profile
-            - publish comment: text field to detail the final front face description/comment for the batch to be pulled into the publishNotes data table.
-            - pouch_date: calendar date selector for describing the date which the batch was pouched
+    Recipe Page:
+        add-recipe:
+        - alphanumeric field following the rules for a batchID definition ('??[R|P|M]') to indicate the batch and the trakerID across database tables
+        - numeric field that should autoparse the batchID feild for the numeric component, to track the batch number, it should increment in the database, and provide a warning message if the new entry is a sinificant increment increase. If the batch number and batchID already exist, provide a warning, and suggest changing input to the 'update-recipe' tab.
+        - style drop down, for which style the batch is following, (pure, rustic, rustic_experimental, mixer), with given option to create a new style in place.
+        - calendar pop-out to indicate the start date of the batch, which should be 3 days after the starter_batch was started.
+        - kake selection drop down, pulling ingredients from the ingredient table that have a 'ingredient_type' of kake_rice or rice, default select the last value of kake_rice in the ingredients table, and have all the rice and kake_rice ingredient_type ingredients available in the drop selction field
+        - koji selection drop down, pulling ingredients from the ingredient table that have a 'ingredient_type' of koji_rice or rice, default select the 'koji50' ingredientID in the ingredients table, and have all the rice and koji_rice ingredient_type ingredients available in the drop selction field
+        - yeast selection drop down, defaulting to the 'Prop_sake9' yeast ingredient from the ingredients table, and have all yeast ingredient_type options available in the drop down
+        - water selection drop down, with all water ingredient_type ingredients available in the drop down
+        - for starter selection have a starterbatch dropdown. the starterbatch dropdown should default to the 'Shubo' starter batch which is 250g Koji, 250ml Water, .4g Lactic Acid at 6C, with a start date of 3 days before the recepie start date, display a warning notification if it is not, and ask for user amendment if it's wrong
+        - when creating a new recipe, the ferment_temp_C field should default to 6C
+        - upon creation of new recipe entry, initialise water, total_kake_g and total_koji_g with the values for each from the associated starter
+
+        edit-entry:
+        - double-clicking an entry field should open this dialog popup box, if no entry selected when edit entry button clicked, then open dropdown menu to select which entry to edit
+        - drop down menu on which batchID to update
+        - drop down menu to select what kind of update to perform on the batch: addition1, addition2, addition3, ferment_finish measurements, batch finishing
+            - Addition1,Addition2,Addition3:
+                - kake_rice addition: numeric field indicating in grams how much kake rice was added on the addition to the Moromi
+                - koji_rice addition: numeric field indicating in grams how much koji rice was added on the addition to the Moromi
+                - water addition: numeric field indicating in mL how much water volume was added on the addition of the moromi
+                - Addition[1|2|3]_Notes: text field to detail any addition notes or comments at the addition
+            - ferment_finish measurements:
+                - ferment_finish_gravity
+                - ferment_finish_brix
+            - batch finishing:
+                - final product measuring temperature: float number entry
+                - calibrated measuring temperature: drop down to select 15.6C or 20C
+                - final product measured Brix%: float number entry
+                - final product measured gravity: float number entry
+                - final_water_addition_mL
+                - clarified boolean checkbox
+                - pasteurized boolean checkbox
+                - pasteurization_notes: text field to detail any addition notes or comments at the batch finish when pasteurizing
+                - finishing_additions: text field to detail any addition notes or comments at the batch finish for adjusting to target profile
+                - publish comment: text field to detail the final front face description/comment for the batch to be pulled into the publishNotes data table.
+                - pouch_date: calendar date selector for describing the date which the batch was pouched
+    Starters page:
+        - add-entry pop-up dialog:
+            - alphanumeric field following the rules for a batchID definition ('??[R|P|M]') to indicate the batch associated
+            - numeric field that should autoparse the batchID feild for the numeric component, to track the batch number, it should increment in the database, and provide a warning message if the new entry is a significant increment increase. If the batch number and batchID already exist, provide a warning, and suggest changing input to the 'update-recipe' tab.
+            - starterbatchID should follow the naming rules of ('s??') where the '??' should match the batch number parsed from the batchID
+            - calendar pop-out to indicate the start date of the starter, which should be 3 days before the batchID is started.
+            - entry values should default to the 'Shubo' starter batch amounts which is 250g Koji, 250ml Water, .4g Lactic Acid at 6C, with a start date of 3 days before the recepie start date, display a warning notification if it is not, and ask for user amendment if it's wrong
+            - the ferment_temp_C field should default to 6C
+
+        - edit-entry pop-up dialog:
+            - double-clicking an entry field should open this dialog popup box
+            - popup dialog box to edit specific fields of the data table, prepopulated with the current field data from the starters table. kake, koji and water fields must be dropdown menus fixed to the different ingredient_types from the ingredients table. (kake must be rice or kake_rice type; koji must be rice or koji_rice type; water must be a water type)
+
+    PublishNotes page:
+        - auto populated and update based on contents in the Recipes table following definitions from the PublishNotes table description in this rules.txt file
+        - pouch_date should be populated when recipe table has been updated with a pouch date
+        edit-entry:
+         - popup dialog with a text field to detail Publish notes description, should be pre-populated with table field data.
+         - double-clicking an entry field should open this dialog popup box
     

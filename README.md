@@ -171,12 +171,7 @@ docker-compose run --rm backup
 
 
 ## TODO
-
-- [ ] **Fix edit function for ingredient and starters page**
-  - Allow for double click and update text in table for field, or implement a pop-up to allow for editing specific fields from the row (check box for row editing, as selection doesn't seem to work)
-- [ ] **Fix edit function on recipe page**
-  - Initial edit worked once, with the appropriate popup menu appearing following the rules document
-- [ ] **Check and implement auto-update of PublishNotes page/sheet**
-  - Populate from the pertinent fields of the recipe page/sheet
+- [ ] **implement auto-update/auto-populate of PublishNotes page/sheet**
+  - Populate data in this table from the corresponding fields of the recipe page/sheet using rules document
 - [ ] **Verify Google Sheets sync**
   - Ensure that sync back to Google Sheet writes types and formatting correctly
