@@ -137,6 +137,11 @@ def get_sheet_data(service, spreadsheet_id: str, sheet_name: str):
         raise Exception(f"Error accessing sheet '{sheet_name}': {error}")
 
 def format_value_for_sheet(value, precision=None):
+    """
+    Format value for Google Sheets. 
+    Returns numeric values as their native type (float/int) so they're recognized as numbers in the sheet.
+    Precision parameter is kept for API compatibility but numbers are sent as actual numbers, not formatted strings.
+    """
     if value is None:
         return ''
     if isinstance(value, bool):
@@ -144,9 +149,11 @@ def format_value_for_sheet(value, precision=None):
     if isinstance(value, date):
         return value.strftime('%Y-%m-%d')
     if isinstance(value, float):
-        if precision is not None:
-            return f"{value:.{precision}f}"
-        return f"{value:.4f}"
+        # Return the actual float value - Google Sheets will recognize it as a number
+        # Precision formatting should be handled by Google Sheets cell number formatting
+        return value
+    if isinstance(value, int):
+        return value
     return str(value)
 
 def write_sheet_data(service, spreadsheet_id: str, sheet_name: str, headers: list, rows: list):
@@ -158,7 +165,7 @@ def write_sheet_data(service, spreadsheet_id: str, sheet_name: str, headers: lis
         result = service.spreadsheets().values().update(
             spreadsheetId=spreadsheet_id,
             range=range_name,
-            valueInputOption='RAW',
+            valueInputOption='USER_ENTERED',  # Parse values - numbers will be recognized as numbers
             body=body
         ).execute()
         # best-effort clear beyond written rows
