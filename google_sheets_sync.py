@@ -20,6 +20,10 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive",
 ]
 
+PUBLISH_STYLE = {'rustic_experimental': 'Rustic_Experimental', 'rustic': 'Rustic', 'pure': 'Pure', 'other': 'Other'}
+# Reverse mapping: from publish sheet format to database format
+STYLE_FROM_PUBLISH = {v: k for k, v in PUBLISH_STYLE.items()}
+
 def resolve_creds_path(explicit_path: Optional[str] = None) -> str:
     """
     Resolve the service account JSON path with a predictable priority:
@@ -132,13 +136,17 @@ def get_sheet_data(service, spreadsheet_id: str, sheet_name: str):
             )
         raise Exception(f"Error accessing sheet '{sheet_name}': {error}")
 
-def format_value_for_sheet(value):
+def format_value_for_sheet(value, precision=None):
     if value is None:
         return ''
     if isinstance(value, bool):
         return 'TRUE' if value else 'FALSE'
     if isinstance(value, date):
         return value.strftime('%Y-%m-%d')
+    if isinstance(value, float):
+        if precision is not None:
+            return f"{value:.{precision}f}"
+        return f"{value:.4f}"
     return str(value)
 
 def write_sheet_data(service, spreadsheet_id: str, sheet_name: str, headers: list, rows: list):
@@ -237,6 +245,22 @@ def parse_bool(value):
     return bool(value)
 
 # ---- VALIDATION FUNCTIONS ---------------------------------------------------------
+
+def convert_style_to_database(style: Optional[str]) -> Optional[str]:
+    """Convert style from sheet format (publish or recipe) to database format (lowercase)"""
+    if style is None or style == "":
+        return None
+    style = style.strip()
+    # First check if it's in publish format and convert
+    if style in STYLE_FROM_PUBLISH:
+        return STYLE_FROM_PUBLISH[style]
+    # If already in database format (lowercase), return as-is after normalization
+    style_lower = style.lower()
+    valid_styles = [s.value for s in StyleEnum]
+    if style_lower in valid_styles:
+        return style_lower
+    # If not found, return None (will be handled by validation)
+    return None
 
 def validate_style(style: Optional[str]) -> tuple:
     """Validate style is one of the allowed categorical values"""
@@ -585,12 +609,16 @@ def sync_recipes_from_sheet(service, spreadsheet_id: str, session: Session):
                     starter_batch_str = starter_batch_str.lower()
                 starter_batch_id = starter_batch_str
             
+            # Convert style from sheet format to database format
+            sheet_style = record.get('style')
+            db_style = convert_style_to_database(sheet_style)
+            
             recipe = Recipe(
                 batchID=record.get('batchID'),
                 start_date=parse_date(record.get('start_date')),
                 pouch_date=parse_date(record.get('pouch_date')),
                 batch=parse_int(record.get('batch')),
-                style=record.get('style'),
+                style=db_style,
                 kake=kake_id,  # Now a string ingredientID
                 koji=koji_id,  # Now a string ingredientID
                 yeast=yeast_id,  # Now a string ingredientID
@@ -655,10 +683,14 @@ def sync_publishnotes_from_sheet(service, spreadsheet_id: str, session: Session)
         validation_errors = []
         synced_count = 0
         for record in records:
+            # Convert style from publish sheet format to database format
+            publish_style = record.get('Style')
+            db_style = convert_style_to_database(publish_style)
+            
             publish_note = PublishNote(
                 BatchID=record.get('BatchID'),
                 Pouch_Date=parse_date(record.get('Pouch_Date')),
-                Style=record.get('Style'),
+                Style=db_style,
                 Water=parse_int(record.get('Water')),
                 ABV=parse_float(record.get('ABV')),
                 SMV=parse_float(record.get('SMV')),
@@ -733,17 +765,17 @@ def sync_starters_to_sheet(service, spreadsheet_id: str, session: Session):
                 'Date': format_value_for_sheet(st.Date),
                 'StarterBatch': st.StarterBatch or '',
                 'BatchID': st.BatchID or '',
-                'Amt_Kake': format_value_for_sheet(st.Amt_Kake),
-                'Amt_Koji': format_value_for_sheet(st.Amt_Koji),
-                'Amt_water': format_value_for_sheet(st.Amt_water),
+                'Amt_Kake': format_value_for_sheet(st.Amt_Kake, precision=0),
+                'Amt_Koji': format_value_for_sheet(st.Amt_Koji, precision=0),
+                'Amt_water': format_value_for_sheet(st.Amt_water, precision=0),
                 'water_type': format_value_for_sheet(st.water_type),
                 'Kake': format_value_for_sheet(st.Kake),
                 'Koji': format_value_for_sheet(st.Koji),
                 'yeast': format_value_for_sheet(st.yeast),
-                'lactic_acid_g': format_value_for_sheet(st.lactic_acid),
-                'MgSO4_g': format_value_for_sheet(st.MgSO4),
-                'KCl_g': format_value_for_sheet(st.KCl),
-                'temp_C': format_value_for_sheet(st.temp_C)
+                'lactic_acid_g': format_value_for_sheet(st.lactic_acid, precision=1),
+                'MgSO4_g': format_value_for_sheet(st.MgSO4, precision=1),
+                'KCl_g': format_value_for_sheet(st.KCl, precision=1),
+                'temp_C': format_value_for_sheet(st.temp_C, precision=1)
             })
         write_sheet_data(service, spreadsheet_id, "Starters", headers, rows)
         print(f"Wrote {len(rows)} starters to sheet")
@@ -779,21 +811,21 @@ def sync_recipes_to_sheet(service, spreadsheet_id: str, session: Session):
                 'yeast': format_value_for_sheet(recipe.yeast),
                 'starter': format_value_for_sheet(recipe.starter),
                 'water_type': format_value_for_sheet(recipe.water_type),
-                'total_kake_g': format_value_for_sheet(recipe.total_kake_g),
-                'total_koji_g': format_value_for_sheet(recipe.total_koji_g),
-                'total_water_mL': format_value_for_sheet(recipe.total_water_mL),
-                'ferment_temp_C': format_value_for_sheet(recipe.ferment_temp_C),
+                'total_kake_g': format_value_for_sheet(recipe.total_kake_g, precision=0),
+                'total_koji_g': format_value_for_sheet(recipe.total_koji_g, precision=0),
+                'total_water_mL': format_value_for_sheet(recipe.total_water_mL, precision=0),
+                'ferment_temp_C': format_value_for_sheet(recipe.ferment_temp_C, precision=1),
                 'Addition1_Notes': recipe.Addition1_Notes or '',
                 'Addition2_Notes': recipe.Addition2_Notes or '',
                 'Addition3_Notes': recipe.Addition3_Notes or '',
-                'ferment_finish_gravity': format_value_for_sheet(recipe.ferment_finish_gravity),
-                'ferment_finish_brix': format_value_for_sheet(recipe.ferment_finish_brix),
-                'final_measured_temp_C': format_value_for_sheet(recipe.final_measured_temp_C),
-                'final_measured_gravity': format_value_for_sheet(recipe.final_measured_gravity),
-                'final_measured_Brix_%': format_value_for_sheet(recipe.final_measured_Brix_pct),
-                'final_gravity': format_value_for_sheet(recipe.final_gravity),
-                'ABV_%': format_value_for_sheet(recipe.ABV_pct),
-                'SMV': format_value_for_sheet(recipe.SMV),
+                'ferment_finish_gravity': format_value_for_sheet(recipe.ferment_finish_gravity, precision=4),  # Gravity: 4 decimals
+                'ferment_finish_brix': format_value_for_sheet(recipe.ferment_finish_brix, precision=2),  # Brix: 2 decimals
+                'final_measured_temp_C': format_value_for_sheet(recipe.final_measured_temp_C, precision=2),  # Temperature: 2 decimals
+                'final_measured_gravity': format_value_for_sheet(recipe.final_measured_gravity, precision=4),  # Gravity: 4 decimals
+                'final_measured_Brix_%': format_value_for_sheet(recipe.final_measured_Brix_pct, precision=2),  # Brix: 2 decimals
+                'final_gravity': format_value_for_sheet(recipe.final_gravity, precision=4),  # Gravity: 4 decimals
+                'ABV_%': format_value_for_sheet(recipe.ABV_pct, precision=1),  # ABV: 1 decimal
+                'SMV': format_value_for_sheet(recipe.SMV, precision=1),  # SMV: 1 decimal
                 'final_water_addition_mL': format_value_for_sheet(recipe.final_water_addition_mL),
                 'clarified': format_value_for_sheet(recipe.clarified),
                 'pasteurized': format_value_for_sheet(recipe.pasteurized),
@@ -817,11 +849,11 @@ def sync_publishnotes_to_sheet(service, spreadsheet_id: str, session: Session):
             rows.append({
                 'BatchID': note.BatchID or '',
                 'Pouch_Date': format_value_for_sheet(note.Pouch_Date),
-                'Style': note.Style or '',
+                'Style': PUBLISH_STYLE.get(note.Style, 'Other') or '',
                 'Water': format_value_for_sheet(note.Water),
-                'ABV': format_value_for_sheet(note.ABV),
-                'SMV': format_value_for_sheet(note.SMV),
-                'Batch_Size_L': format_value_for_sheet(note.Batch_Size_L),
+                'ABV': format_value_for_sheet(note.ABV, precision=1),
+                'SMV': format_value_for_sheet(note.SMV, precision=1),
+                'Batch_Size_L': format_value_for_sheet(note.Batch_Size_L, precision=2),
                 'Rice': note.Rice or '',
                 'Description': note.Description or ''
             })
