@@ -13,16 +13,16 @@ This project contains:
 
 ## Database Schema
 
-The database is built from an Excel file with the following sheets:
+The database uses SQLite with the following tables:
 - `Ingredients`: ingredientID, ingredient_type, acc_date, source, description
-- `Recipe`: start_date, pouch_date, batchID, batch, style, kake, koji, yeast, starter, water_type
-- `Starters`: Date, StarterBatch, BatchID, Amt_Kake, Amt_Koji, Amt_water, water_type, Kake, Koji, yeast
+- `Recipe`: start_date, pouch_date, batchID, batch, style, kake, koji, yeast, starter, water_type, and calculated fields (ABV%, SMV, etc.)
+- `Starters`: Date, StarterBatch, BatchID, Amt_Kake, Amt_Koji, Amt_water, water_type, Kake, Koji, yeast, lactic_acid, MgSO4, KCl, temp_C
 - `PublishNotes`: BatchID, Pouch_Date, Style, Water, ABV, SMV, Batch_Size_L, Rice, Description
-- `Formulas`: Brewing calculations and measurement formulas
 
 ## Setup
 
-### Option 1: Conda Environment (Recommended for Development)
+### Conda Environment (Recommended)
+
 1. Create and activate conda environment:
    ```bash
    conda env create -f environment.yml
@@ -31,26 +31,20 @@ The database is built from an Excel file with the following sheets:
 
 2. Initialize the database:
    ```bash
-   python setup_database.py
+   python setup.py --skip-env
+   ```
+   Or use the PowerShell script:
+   ```powershell
+   .\setup_conda.ps1
    ```
 
-3. Import data from Excel:
+3. Sync initial data from Google Sheets (optional):
    ```bash
-   python import_excel_data.py
+   python sync_initial_data.py <SPREADSHEET_ID>
    ```
 
-### Option 2: Docker Containerization (Recommended for Production)
-1. Setup Docker environment:
-   ```bash
-   python setup_docker.py
-   ```
+### Manual Setup
 
-2. Start the application:
-   ```bash
-   docker-compose up
-   ```
-
-### Option 3: Manual Setup
 1. Install dependencies:
    ```bash
    pip install -r requirements.txt
@@ -58,120 +52,106 @@ The database is built from an Excel file with the following sheets:
 
 2. Initialize the database:
    ```bash
-   python setup_database.py
-   ```
-
-3. Import data from Excel:
-   ```bash
-   python import_excel_data.py
+   python setup.py --skip-env
    ```
 
 ## Usage
 
-### Command Line Interface
-Run the database interface:
-```bash
-python database_interface.py
-```
-
 ### Graphical User Interface
+
 Run the GUI application:
 ```bash
 python gui_app.py
 ```
-or
-```bash
-python run_gui.py
-```
 
 ### GUI Features
-The GUI provides an intuitive interface for:
-- **Ingredients Tab**: Add and manage ingredients (yeast, rice, koji, etc.)
-- **Recipes Tab**: Create and manage sake recipes with batch information
-- **Starters Tab**: Track yeast starter development and measurements
-- **Publish Notes Tab**: Record final product details (ABV, SMV, etc.)
-- **View Data Tab**: Database statistics and data overview
+
+The GUI provides an intuitive interface with the following tabs:
+
+- **Ingredients Tab**: View, add, and manage ingredients (yeast, rice, koji, etc.)
+- **Recipes Tab**: View, add, and manage sake recipes with batch information
+- **Starters Tab**: View, add, and manage yeast starter development and measurements
+- **Publish Notes Tab**: View and manage final product details (ABV, SMV, etc.)
+- **Formulas Tab**: Live calculators for:
+  - Gravity correction (temperature-based)
+  - ABV% and SMV calculations
+  - Dilution adjustments (Pure and Mixer target profiles)
+- **Validate Tab**: Validate database records against business rules
+- **Google Sync Tab**: Sync data to/from Google Sheets with progress tracking
 
 ### Quick Start
+
 1. Run `python gui_app.py` to open the GUI
-2. Navigate between tabs to add different types of data
-3. Use the "Load Data" buttons to refresh dropdown lists
-4. View statistics in the "View Data" tab
+2. Navigate between tabs to view and manage data
+3. Use the "Load Data" buttons to refresh data grids
+4. Use the Formulas tab for brewing calculations
+5. Use File menu → "Sync from Google Sheets" or "Sync to Google Sheets" for backup/restore
 
 ## Google Sheets Integration
 
-### Setup Google Sheets Sync
-1. Install Google API dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+### Setup
 
-2. Set up Google Sheets API credentials:
-   ```bash
-   python setup_google_sheets.py
-   ```
-
-3. Follow the setup wizard to:
-   - Configure Google Cloud Console credentials
-   - Create or link a Google Spreadsheet
-   - Test the sync functionality
+1. Place your `service_account.json` credentials file in the project directory
+2. The default spreadsheet ID is configured in `gui_app.py` (can be changed in the sync dialog)
 
 ### Using Google Sheets Sync
-- **Export to Google Sheets**: Upload your local database to Google Sheets
-- **Import from Google Sheets**: Download data from Google Sheets to local database
-- **Automatic Backup**: Keep your data synchronized across devices
-- **Collaborative Editing**: Share your spreadsheet with team members
 
-### Google Sheets Tab Features
-- **Authentication**: Connect to your Google account
-- **Configuration**: Set your spreadsheet ID
-- **Sync Operations**: Export/import data with progress tracking
-- **Status Monitoring**: Real-time sync status and error reporting
+- **Sync from Google Sheets**: Import data from your master Google Sheet to the local database
+  - Use File menu → "Sync from Google Sheets" in the GUI
+  - Or run: `python sync_initial_data.py <SPREADSHEET_ID>`
+- **Sync to Google Sheets**: Export/backup your local database to Google Sheets
+  - Use File menu → "Sync to Google Sheets" in the GUI
+  - Or use the Google Sync tab for more control
 
-## Docker Usage
+### Google Sheets Features
 
-### Quick Start with Docker
+- **Bidirectional Sync**: Import from and export to Google Sheets
+- **Data Validation**: Validates data against rules document during sync
+- **Type Preservation**: Numbers are written as numeric values (not strings) for proper formula support
+- **Style Conversion**: Automatically converts between database format (lowercase) and publish format (capitalized)
+
+## Command Line Interface
+
+A command-line interface is available via `gooey_interface.py` using Gooey for GUI-based CLI operations:
+
 ```bash
-# Setup Docker environment
-python setup_docker.py
-
-# Start the application
-docker-compose up
-
-# Run in background
-docker-compose up -d
-
-# Stop the application
-docker-compose down
+python gooey_interface.py
 ```
 
-### Docker Commands
-```bash
-# Run GUI application
-docker-compose run --rm sakemonkey-db python gui_app.py
+This provides a GUI wrapper for command-line operations to add/edit ingredients, recipes, starters, and publish notes.
 
-# Run CLI interface
-docker-compose run --rm sakemonkey-db python database_interface.py
+## Formulas
 
-# Initialize database
-docker-compose run --rm sakemonkey-db python setup_database.py
+The Formulas tab provides live calculators:
 
-# Import Excel data
-docker-compose run --rm sakemonkey-db python import_excel_data.py
-
-# Create backup
-docker-compose run --rm backup
-```
-
-### Data Persistence
-- **Database**: `./data/sake_recipe_db.sqlite`
-- **Credentials**: `./credentials/`
-- **Logs**: `./logs/`
-- **Backups**: `./backups/`
-
+- **Gravity Correction**: Corrects specific gravity measurements based on temperature
+- **ABV% Calculation**: Calculates alcohol by volume from brix and corrected gravity
+- **SMV Calculation**: Calculates Sake Meter Value from corrected gravity
+- **Dilution Calculator**: Calculates water additions needed to reach target profiles:
+  - **Pure**: 11% brix, 1.005 SG
+  - **Mixer**: 12% brix, 0.995 SG
 
 ## TODO
-- [ ] **implement auto-update/auto-populate of PublishNotes page/sheet**
+
+- [ ] **Implement auto-update/auto-populate of PublishNotes page/sheet**
   - Populate data in this table from the corresponding fields of the recipe page/sheet using rules document
-- [ ] **Verify Google Sheets sync**
-  - Ensure that sync back to Google Sheet writes types and formatting correctly
+  - Currently PublishNotes must be manually populated or synced from Google Sheets (partially implemented to populate upon entry update)
+
+- [ ] **Docker containerization**
+  - Create Dockerfile and docker-compose.yml for containerized deployment
+  - Setup script for Docker environment
+
+
+
+- [ ] **Command Line Interface (CLI)**
+  - Text-based CLI interface (currently only Gooey GUI wrapper exists)
+  - Direct command-line operations without GUI
+
+- [ ] **Edit functionality improvements**
+  - Fix edit function on recipe page
+    - Ensure edit popup menu appears correctly following the rules document
+
+- [ ] **Additional features**
+  - View Data tab with database statistics and data overview
+  - Enhanced error handling and user feedback
+
