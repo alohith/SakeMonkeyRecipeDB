@@ -19,7 +19,7 @@ from formulas import (
     calculate_final_gravity, calculate_abv, calculate_smv,
     calculate_dilution_adjustment
 )
-from google_sheets_sync import sync_from_google_sheets, sync_to_google_sheets
+from google_sheets_sync import sync_from_google_sheets, sync_to_google_sheets, update_publish_note_batch_size
 import os
 
 # Default Google Sheet ID from rules.txt
@@ -847,10 +847,10 @@ class DataGridPanel(wx.Panel):
                             publish_data["ABV"] = recipe.ABV_pct
                         if not existing_publish or publish_data.get("SMV") is None:
                             publish_data["SMV"] = recipe.SMV
-                        # Calculate batch size
+                        # Calculate batch size: total_water_mL + final_water_addition_mL converted to liters
                         total_water = (recipe.total_water_mL or 0.0) + (recipe.final_water_addition_mL or 0.0)
                         if not existing_publish or publish_data.get("Batch_Size_L") is None:
-                            publish_data["Batch_Size_L"] = round(total_water / 1000.0, 2) if total_water else None
+                            publish_data["Batch_Size_L"] = round(total_water / 1000.0, 2) if total_water > 0 else None
                         # Get rice description
                         if not existing_publish or not publish_data.get("Rice"):
                             publish_data["Rice"] = build_rice_description(self.session, recipe.kake)
@@ -934,6 +934,8 @@ class DataGridPanel(wx.Panel):
                         record.total_koji_g = (record.total_koji_g or 0.0) + update_data["koji_g"]
                     if "water_mL" in update_data:
                         record.total_water_mL = (record.total_water_mL or 0.0) + update_data["water_mL"]
+                        # Update PublishNote batch size when total_water_mL changes
+                        update_publish_note_batch_size(self.session, record)
                 elif update_type == "ferment_finish":
                     if "ferment_finish_gravity" in update_data:
                         record.ferment_finish_gravity = update_data["ferment_finish_gravity"]
@@ -974,6 +976,10 @@ class DataGridPanel(wx.Panel):
                         publish.Rice = build_rice_description(self.session, record.kake)
                         publish.ABV = record.ABV_pct
                         publish.SMV = record.SMV
+                    
+                    # Update PublishNote batch size when final_water_addition_mL or total_water_mL changes
+                    if "final_water_addition_mL" in update_data or "total_water_mL" in update_data:
+                        update_publish_note_batch_size(self.session, record)
                 elif update_type == "finishing_values":
                     field_name = update_data.get("field_name")
                     if field_name and hasattr(record, field_name):

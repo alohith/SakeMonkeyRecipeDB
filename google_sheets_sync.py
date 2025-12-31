@@ -399,7 +399,32 @@ def validate_recipe(session: Session, recipe: Recipe) -> list[str]:
     if not is_valid:
         errors.append(error)
     
+    # Validate that total_water_mL doesn't incorrectly include final_water_addition_mL
+    # total_water_mL should be running total of additions during fermentation only
+    # final_water_addition_mL is separate and added at the end
+    if recipe.total_water_mL is not None and recipe.final_water_addition_mL is not None:
+        # Warn if total_water_mL seems to already include final_water_addition_mL
+        # This is a data integrity check - total_water_mL should be <= total if final_water_addition_mL is separate
+        # We can't definitively validate this, but we can add a note in validation
+        pass  # This is informational - the calculation in Batch_Size_L handles it correctly
+    
     return errors
+
+def update_publish_note_batch_size(session: Session, recipe: Recipe):
+    """Update PublishNote Batch_Size_L based on recipe water totals"""
+    if not recipe.batchID:
+        return
+    
+    publish = session.get(PublishNote, recipe.batchID)
+    if not publish:
+        return  # PublishNote doesn't exist yet, will be created when needed
+    
+    # Calculate batch size: total_water_mL + final_water_addition_mL converted to liters
+    total_water = (recipe.total_water_mL or 0.0) + (recipe.final_water_addition_mL or 0.0)
+    if total_water > 0:
+        publish.Batch_Size_L = round(total_water / 1000.0, 2)
+    else:
+        publish.Batch_Size_L = None
 
 def validate_starter(session: Session, starter: Starter) -> list[str]:
     """Validate a starter against all business rules. Returns list of validation errors."""
@@ -668,8 +693,12 @@ def sync_recipes_from_sheet(service, spreadsheet_id: str, session: Session):
                 for key, value in recipe.dict(exclude={'batchID'}).items():
                     if value is not None:
                         setattr(existing, key, value)
+                # Update PublishNote batch size if water totals changed
+                update_publish_note_batch_size(session, existing)
             else:
                 session.add(recipe)
+                # Update PublishNote batch size for new recipe
+                update_publish_note_batch_size(session, recipe)
             synced_count += 1
         session.commit()
         print(f"Synced {synced_count}/{len(records)} recipes")
